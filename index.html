@@ -53,8 +53,8 @@ h1 { text-align: center; }
   transition: 0.3s;
 }
 
-.red { background: #ff3b30; }
-.yellow { background: #ffcc00; }
+.red { background: #ff3b30 !important; }
+.yellow { background: #ffcc00 !important; }
 
 input {
   width: 100%;
@@ -92,7 +92,7 @@ button {
   border-bottom: 1px solid #eee;
 }
 
-.row div { display: flex; align-items: center; }
+.row div { display: flex; align-items: center; gap: 10px; }
 </style>
 </head>
 
@@ -132,7 +132,7 @@ button {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, onSnapshot, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-analytics.js";
 
 // Firebase config
@@ -148,7 +148,7 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
+getAnalytics(app);
 const db = getFirestore(app);
 
 let transactions = [];
@@ -180,22 +180,27 @@ document.getElementById("budget").value = formatCurrency(budgetValue);
 
 // Add transaction
 async function addTransaction() {
-  const desc = document.getElementById("desc").value;
+  const desc = document.getElementById("desc").value.trim();
   const amt = parseFloat(document.getElementById("amount").value);
-  if (!desc || !amt) return;
+  if (!desc) { alert("Enter a description"); return; }
+  if (!amt || amt <= 0) { alert("Enter a valid amount"); return; }
 
-  await addDoc(collection(db,"transactions"),{
-    desc,
-    amt,
-    date: new Date().toISOString()
-  });
-
-  document.getElementById("desc").value = "";
-  document.getElementById("amount").value = "";
+  try {
+    await addDoc(collection(db,"transactions"),{
+      desc,
+      amt,
+      date: new Date().toISOString()
+    });
+    document.getElementById("desc").value = "";
+    document.getElementById("amount").value = "";
+  } catch(err) {
+    console.error("Failed to add transaction:", err);
+  }
 }
 
 // Delete transaction
 async function deleteTransaction(id) {
+  if(!confirm("Delete this transaction?")) return;
   await deleteDoc(doc(db, "transactions", id));
 }
 
@@ -203,11 +208,13 @@ async function deleteTransaction(id) {
 async function editTransaction(id, oldDesc, oldAmt) {
   const newDesc = prompt("Edit description:", oldDesc);
   if (newDesc === null) return;
-  const newAmt = prompt("Edit amount:", oldAmt);
-  if (newAmt === null) return;
+  const newAmtStr = prompt("Edit amount:", oldAmt);
+  if (newAmtStr === null) return;
+  const newAmt = parseFloat(newAmtStr);
+  if(isNaN(newAmt) || newAmt <=0){ alert("Invalid amount"); return; }
   await updateDoc(doc(db,"transactions",id), {
     desc: newDesc,
-    amt: parseFloat(newAmt)
+    amt: newAmt
   });
 }
 
@@ -249,11 +256,13 @@ function render() {
   // List transactions
   const list = document.getElementById("list");
   list.innerHTML = "";
-  filtered.reverse().forEach(t=>{
+  filtered.slice().reverse().forEach(t=>{
     const row = document.createElement("div");
     row.className = "row";
+
     const inner = document.createElement("div");
     inner.innerHTML = `<span>${t.desc}</span><span>${formatCurrency(t.amt)}</span>`;
+
     const actions = document.createElement("div");
 
     const editBtn = document.createElement("button");
