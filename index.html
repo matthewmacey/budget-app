@@ -186,15 +186,30 @@ async function addTransaction() {
   if (!amt || amt <= 0) { alert("Enter a valid amount"); return; }
 
   try {
-    await addDoc(collection(db,"transactions"),{
+    // Add to Firestore
+    const docRef = await addDoc(collection(db,"transactions"),{
       desc,
       amt,
       date: new Date().toISOString()
     });
+
+    // Immediately update local array for instant UI
+    transactions.push({
+      id: docRef.id,
+      desc,
+      amt,
+      date: new Date().toISOString()
+    });
+
+    // Clear inputs
     document.getElementById("desc").value = "";
     document.getElementById("amount").value = "";
+
+    // Re-render UI instantly
+    render();
   } catch(err) {
     console.error("Failed to add transaction:", err);
+    alert("Failed to add transaction. Check console.");
   }
 }
 
