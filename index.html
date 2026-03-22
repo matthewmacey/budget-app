@@ -136,7 +136,7 @@ button {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-analytics.js";
 
 // Firebase config
@@ -191,14 +191,8 @@ async function addTransaction() {
   if (!amt || amt <= 0) { alert("Enter a valid amount"); return; }
 
   try {
-    const docRef = await addDoc(collection(db,"transactions"),{
-      desc,
-      amt,
-      date: new Date().toISOString()
-    });
-
-    transactions.push({
-      id: docRef.id,
+    // Add to Firestore ONLY; snapshot listener will handle UI update
+    await addDoc(collection(db,"transactions"),{
       desc,
       amt,
       date: new Date().toISOString()
@@ -206,7 +200,6 @@ async function addTransaction() {
 
     document.getElementById("desc").value = "";
     document.getElementById("amount").value = "";
-    render();
   } catch(err) {
     console.error("Failed to add transaction:", err);
     alert("Failed to add transaction. Check console.");
@@ -217,6 +210,7 @@ async function addTransaction() {
 async function deleteTransaction(id) {
   if (!confirm("Delete this transaction?")) return;
   try {
+    // Remove from local array immediately
     transactions = transactions.filter(t => t.id !== id);
     render();
     await deleteDoc(doc(db, "transactions", id));
@@ -331,11 +325,6 @@ async function archiveOldTransactions(cycleStart, nextCycleStart) {
   for (let t of oldTransactions) {
     await addDoc(collection(db, "history"), { ...t, cycleStart: cycleStart.toISOString() });
   }
-
-  // Optionally, delete them from current transactions if you want a clean slate
-  // for (let t of oldTransactions) {
-  //   await deleteDoc(doc(db, "transactions", t.id));
-  // }
 }
 
 // --- Export to Excel ---
