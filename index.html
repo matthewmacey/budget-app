@@ -66,6 +66,14 @@ input {
 }
 
 button {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: none;
+  font-size: 14px;
+  margin-left: 5px;
+}
+
+#addBtn, #updateBudgetBtn {
   width: 100%;
   padding: 14px;
   border-radius: 12px;
@@ -79,9 +87,12 @@ button {
 .row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid #eee;
 }
+
+.row div { display: flex; align-items: center; }
 </style>
 </head>
 
@@ -96,7 +107,7 @@ button {
     <span>Budget</span>
     <input id="budget" value="$1,200">
   </div>
-  <button onclick="updateBudget()">Update Budget</button>
+  <button id="updateBudgetBtn">Update Budget</button>
 
   <div class="stat"><span>Spent</span><span id="spent">$0</span></div>
   <div class="stat"><span>Remaining</span><span id="remaining">$0</span></div>
@@ -112,7 +123,7 @@ button {
 <div class="card">
   <input id="desc" placeholder="What did you buy?">
   <input id="amount" type="number" placeholder="Amount">
-  <button onclick="addTransaction()">Add Purchase</button>
+  <button id="addBtn">Add Purchase</button>
 </div>
 
 <div class="card" id="list"></div>
@@ -120,134 +131,161 @@ button {
 </div>
 
 <script type="module">
-  // Import Firebase v12 modules
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-  import { getFirestore, collection, addDoc, getDocs, onSnapshot } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-analytics.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs, onSnapshot, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-analytics.js";
 
-  // Firebase config
-  const firebaseConfig = {
-    apiKey: "AIzaSyA1KSyrh5UY3omenJMK2IBCH-fTvVCeIc4",
-    authDomain: "biweekly-budget-a5dac.firebaseapp.com",
-    projectId: "biweekly-budget-a5dac",
-    storageBucket: "biweekly-budget-a5dac.firebasestorage.app",
-    messagingSenderId: "832349348274",
-    appId: "1:832349348274:web:293ca1023fb060b20b04ab",
-    measurementId: "G-4KDSBKEQ51"
-  };
+// Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyA1KSyrh5UY3omenJMK2IBCH-fTvVCeIc4",
+  authDomain: "biweekly-budget-a5dac.firebaseapp.com",
+  projectId: "biweekly-budget-a5dac",
+  storageBucket: "biweekly-budget-a5dac.firebasestorage.app",
+  messagingSenderId: "832349348274",
+  appId: "1:832349348274:web:293ca1023fb060b20b04ab",
+  measurementId: "G-4KDSBKEQ51"
+};
 
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
-  const db = getFirestore(app);
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+const db = getFirestore(app);
 
-  // App state
-  let transactions = [];
-  let budgetValue = 1200; // default
+let transactions = [];
+let budgetValue = 1200;
+const anchor = new Date("2026-03-19");
 
-  const anchor = new Date("2026-03-19"); // fixed cycle anchor
+// Utilities
+function formatCurrency(num) { return "$" + num.toLocaleString(); }
+function parseCurrency(str) { return parseFloat(str.replace(/[^0-9.-]+/g,"")) || 0; }
+function getCycleStart() {
+  const now = new Date();
+  const diffDays = Math.floor((now - anchor) / (1000*60*60*24));
+  const cycleNumber = Math.floor(diffDays / 14);
+  const start = new Date(anchor);
+  start.setDate(anchor.getDate() + cycleNumber * 14);
+  return start;
+}
 
-  function formatCurrency(num) {
-    return "$" + num.toLocaleString();
-  }
+// Budget update
+function updateBudget() {
+  const input = document.getElementById("budget");
+  budgetValue = parseCurrency(input.value);
+  input.value = formatCurrency(budgetValue);
+  render();
+}
+document.getElementById("updateBudgetBtn").addEventListener("click", updateBudget);
+document.getElementById("budget").addEventListener("blur", updateBudget);
+document.getElementById("budget").value = formatCurrency(budgetValue);
 
-  function parseCurrency(str) {
-    return parseFloat(str.replace(/[^0-9.-]+/g,"")) || 0;
-  }
+// Add transaction
+async function addTransaction() {
+  const desc = document.getElementById("desc").value;
+  const amt = parseFloat(document.getElementById("amount").value);
+  if (!desc || !amt) return;
 
-  function getCycleStart() {
-    const now = new Date();
-    const diffDays = Math.floor((now - anchor) / (1000*60*60*24));
-    const cycleNumber = Math.floor(diffDays / 14);
-    const start = new Date(anchor);
-    start.setDate(anchor.getDate() + cycleNumber * 14);
-    return start;
-  }
-
-  function updateBudget() {
-    const input = document.getElementById("budget");
-    budgetValue = parseCurrency(input.value);
-    input.value = formatCurrency(budgetValue);
-    render();
-  }
-
-  async function addTransaction() {
-    const desc = document.getElementById("desc").value;
-    const amt = parseFloat(document.getElementById("amount").value);
-    if (!desc || !amt) return;
-
-    await addDoc(collection(db, "transactions"), {
-      desc,
-      amt,
-      date: new Date().toISOString()
-    });
-
-    document.getElementById("desc").value = "";
-    document.getElementById("amount").value = "";
-  }
-
-  function render() {
-    const start = getCycleStart();
-    const end = new Date(start);
-    end.setDate(start.getDate() + 13);
-    const now = new Date();
-
-    const filtered = transactions.filter(t => {
-      const d = new Date(t.date);
-      return d >= start && d <= end;
-    });
-
-    const spent = filtered.reduce((a,b)=>a+b.amt, 0);
-    const remaining = budgetValue - spent;
-
-    document.getElementById("spent").innerText = formatCurrency(spent);
-    document.getElementById("remaining").innerText = formatCurrency(remaining);
-
-    // Pace logic
-    let totalDays = 14;
-    let daysElapsed = Math.floor((now - start)/(1000*60*60*24)) + 1;
-    daysElapsed = Math.min(Math.max(daysElapsed,1),14);
-
-    const timePct = (daysElapsed / totalDays) * 100;
-    const spendPct = (spent / budgetValue) * 100;
-
-    document.getElementById("pace").innerText =
-      `Used ${timePct.toFixed(0)}% of time, ${spendPct.toFixed(0)}% of budget`;
-
-    // Progress bar
-    const bar = document.getElementById("bar");
-    const paceDiff = spendPct - timePct;
-    bar.style.width = spendPct + "%";
-    bar.className = "bar";
-    if (paceDiff > 15) bar.classList.add("red");
-    else if (paceDiff > 5) bar.classList.add("yellow");
-
-    // Cycle display
-    document.getElementById("cycle").innerText =
-      `Cycle: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
-
-    // Transactions list
-    const list = document.getElementById("list");
-    list.innerHTML = "";
-    filtered.reverse().forEach(t=>{
-      const row = document.createElement("div");
-      row.className = "row";
-      row.innerHTML = `<span>${t.desc}</span><span>${formatCurrency(t.amt)}</span>`;
-      list.appendChild(row);
-    });
-  }
-
-  // Listen to Firestore changes in real-time
-  onSnapshot(collection(db, "transactions"), (snapshot)=>{
-    transactions = snapshot.docs.map(doc=>doc.data());
-    render();
+  await addDoc(collection(db,"transactions"),{
+    desc,
+    amt,
+    date: new Date().toISOString()
   });
 
-  // Auto-format budget input on blur
-  document.getElementById("budget").addEventListener("blur", updateBudget);
-  document.getElementById("budget").value = formatCurrency(budgetValue);
+  document.getElementById("desc").value = "";
+  document.getElementById("amount").value = "";
+}
+
+// Delete transaction
+async function deleteTransaction(id) {
+  await deleteDoc(doc(db, "transactions", id));
+}
+
+// Edit transaction
+async function editTransaction(id, oldDesc, oldAmt) {
+  const newDesc = prompt("Edit description:", oldDesc);
+  if (newDesc === null) return;
+  const newAmt = prompt("Edit amount:", oldAmt);
+  if (newAmt === null) return;
+  await updateDoc(doc(db,"transactions",id), {
+    desc: newDesc,
+    amt: parseFloat(newAmt)
+  });
+}
+
+// Render function
+function render() {
+  const start = getCycleStart();
+  const end = new Date(start); end.setDate(start.getDate() + 13);
+  const now = new Date();
+
+  const filtered = transactions.filter(t=>{
+    const d = new Date(t.date);
+    return d >= start && d <= end;
+  });
+
+  const spent = filtered.reduce((a,b)=>a+b.amt,0);
+  const remaining = budgetValue - spent;
+
+  document.getElementById("spent").innerText = formatCurrency(spent);
+  document.getElementById("remaining").innerText = formatCurrency(remaining);
+
+  const totalDays = 14;
+  let daysElapsed = Math.floor((now - start)/(1000*60*60*24))+1;
+  daysElapsed = Math.min(Math.max(daysElapsed,1),14);
+
+  const timePct = (daysElapsed/totalDays)*100;
+  const spendPct = (spent/budgetValue)*100;
+
+  document.getElementById("pace").innerText = `Used ${timePct.toFixed(0)}% of time, ${spendPct.toFixed(0)}% of budget`;
+
+  const bar = document.getElementById("bar");
+  const paceDiff = spendPct - timePct;
+  bar.style.width = spendPct + "%";
+  bar.className = "bar";
+  if(paceDiff>15) bar.classList.add("red");
+  else if(paceDiff>5) bar.classList.add("yellow");
+
+  document.getElementById("cycle").innerText = `Cycle: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+
+  // List transactions
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  filtered.reverse().forEach(t=>{
+    const row = document.createElement("div");
+    row.className = "row";
+    const inner = document.createElement("div");
+    inner.innerHTML = `<span>${t.desc}</span><span>${formatCurrency(t.amt)}</span>`;
+    const actions = document.createElement("div");
+
+    const editBtn = document.createElement("button");
+    editBtn.textContent = "Edit";
+    editBtn.onclick = ()=>editTransaction(t.id, t.desc, t.amt);
+
+    const delBtn = document.createElement("button");
+    delBtn.textContent = "Delete";
+    delBtn.onclick = ()=>deleteTransaction(t.id);
+
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+
+    row.appendChild(inner);
+    row.appendChild(actions);
+    list.appendChild(row);
+  });
+}
+
+// Firestore real-time listener
+onSnapshot(collection(db,"transactions"), snapshot=>{
+  transactions = snapshot.docs.map(doc=>{
+    const data = doc.data();
+    data.id = doc.id; // keep id for edit/delete
+    return data;
+  });
+  render();
+});
+
+// Attach add button
+document.getElementById("addBtn").addEventListener("click", addTransaction);
 
 </script>
-
 </body>
 </html>
