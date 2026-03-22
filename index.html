@@ -12,95 +12,25 @@
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
 <style>
-body {
-  font-family: -apple-system;
-  margin: 0;
-  background: #f2f2f7;
-}
-
+body { font-family: -apple-system; margin: 0; background: #f2f2f7; }
 .container { padding: 20px; }
-
-.card {
-  background: white;
-  border-radius: 16px;
-  padding: 16px;
-  margin-bottom: 15px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-}
-
+.card { background: white; border-radius: 16px; padding: 16px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 h1 { text-align: center; }
-
-.stat {
-  display: flex;
-  justify-content: space-between;
-  margin: 6px 0;
-}
-
-.subtle {
-  font-size: 13px;
-  color: gray;
-}
-
-.progress {
-  height: 10px;
-  background: #e5e5ea;
-  border-radius: 10px;
-  overflow: hidden;
-  margin-top: 10px;
-}
-
-.bar {
-  height: 100%;
-  width: 0%;
-  background: #34c759;
-  transition: 0.3s;
-}
-
+.stat { display: flex; justify-content: space-between; margin: 6px 0; }
+.subtle { font-size: 13px; color: gray; }
+.progress { height: 10px; background: #e5e5ea; border-radius: 10px; overflow: hidden; margin-top: 10px; }
+.bar { height: 100%; width: 0%; background: #34c759; transition: 0.3s; }
 .red { background: #ff3b30 !important; }
 .yellow { background: #ffcc00 !important; }
-
-input {
-  width: 100%;
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px solid #ddd;
-  margin-bottom: 10px;
-  font-size: 16px;
-}
-
-button {
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: none;
-  font-size: 14px;
-  margin-left: 5px;
-}
-
-#addBtn, #updateBudgetBtn, #exportBtn {
-  width: 100%;
-  padding: 14px;
-  border-radius: 12px;
-  border: none;
-  background: black;
-  color: white;
-  font-size: 16px;
-  margin-top: 5px;
-}
-
-.row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-  border-bottom: 1px solid #eee;
-}
-
+input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ddd; margin-bottom: 10px; font-size: 16px; }
+button { padding: 6px 10px; border-radius: 8px; border: none; font-size: 14px; margin-left: 5px; }
+#addBtn, #updateBudgetBtn, #exportBtn { width: 100%; padding: 14px; border-radius: 12px; border: none; background: black; color: white; font-size: 16px; margin-top: 5px; }
+.row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; }
 .row div { display: flex; align-items: center; gap: 10px; }
 </style>
 </head>
 
 <body>
-
 <div class="container">
 
 <h1>Bi-Weekly Budget</h1>
@@ -136,7 +66,7 @@ button {
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, addDoc, deleteDoc, updateDoc, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-analytics.js";
 
 // Firebase config
@@ -172,18 +102,38 @@ function getCycleStart(date = new Date()) {
   return start;
 }
 
-// --- Budget Update ---
-function updateBudget() {
+// --- Load budget from Firestore ---
+async function loadBudget() {
+  try {
+    const budgetDoc = doc(db, "settings", "currentBudget");
+    const snap = await getDoc(budgetDoc);
+    if (snap.exists()) {
+      budgetValue = snap.data().amount;
+      document.getElementById("budget").value = formatCurrency(budgetValue);
+    } else {
+      // initialize in Firestore
+      await setDoc(budgetDoc, { amount: budgetValue });
+    }
+  } catch(err) {
+    console.error("Failed to load budget:", err);
+  }
+}
+
+// --- Update budget ---
+async function updateBudget() {
   const input = document.getElementById("budget");
   budgetValue = parseCurrency(input.value);
   input.value = formatCurrency(budgetValue);
+  try {
+    await setDoc(doc(db,"settings","currentBudget"),{ amount: budgetValue });
+  } catch(err) {
+    console.error("Failed to update budget:", err);
+    alert("Failed to update budget. Check console.");
+  }
   render();
 }
-document.getElementById("updateBudgetBtn").addEventListener("click", updateBudget);
-document.getElementById("budget").addEventListener("blur", updateBudget);
-document.getElementById("budget").value = formatCurrency(budgetValue);
 
-// --- Add Transaction ---
+// --- Add transaction ---
 async function addTransaction() {
   const desc = document.getElementById("desc").value.trim();
   const amt = parseFloat(document.getElementById("amount").value);
@@ -191,13 +141,11 @@ async function addTransaction() {
   if (!amt || amt <= 0) { alert("Enter a valid amount"); return; }
 
   try {
-    // Add to Firestore ONLY; snapshot listener will handle UI update
     await addDoc(collection(db,"transactions"),{
       desc,
       amt,
       date: new Date().toISOString()
     });
-
     document.getElementById("desc").value = "";
     document.getElementById("amount").value = "";
   } catch(err) {
@@ -206,11 +154,10 @@ async function addTransaction() {
   }
 }
 
-// --- Delete Transaction ---
+// --- Delete transaction ---
 async function deleteTransaction(id) {
   if (!confirm("Delete this transaction?")) return;
   try {
-    // Remove from local array immediately
     transactions = transactions.filter(t => t.id !== id);
     render();
     await deleteDoc(doc(db, "transactions", id));
@@ -220,43 +167,34 @@ async function deleteTransaction(id) {
   }
 }
 
-// --- Edit Transaction ---
+// --- Edit transaction ---
 async function editTransaction(id, oldDesc, oldAmt) {
   const newDesc = prompt("Edit description:", oldDesc);
   if (newDesc === null) return;
-
   const newAmtStr = prompt("Edit amount:", oldAmt);
   if (newAmtStr === null) return;
-
   const newAmt = parseFloat(newAmtStr);
   if (isNaN(newAmt) || newAmt <= 0) { alert("Invalid amount"); return; }
 
   try {
     const index = transactions.findIndex(t => t.id === id);
-    if (index !== -1) {
-      transactions[index].desc = newDesc;
-      transactions[index].amt = newAmt;
-      render();
-    }
-
+    if (index !== -1) { transactions[index].desc = newDesc; transactions[index].amt = newAmt; render(); }
     await updateDoc(doc(db,"transactions",id), { desc: newDesc, amt: newAmt });
-  } catch(err) {
-    console.error("Failed to edit transaction:", err);
-    alert("Failed to edit transaction. Check console.");
-  }
+  } catch(err) { console.error("Failed to edit transaction:", err); alert("Failed to edit transaction. Check console."); }
 }
 
-// --- Render Function ---
+// --- Render function ---
 function render() {
   const start = getCycleStart();
   const end = new Date(start); end.setDate(start.getDate() + 13);
   const now = new Date();
 
-  // Check for cycle reset
   if (!lastCycleStart) lastCycleStart = start;
   if (start > lastCycleStart) {
     archiveOldTransactions(lastCycleStart, start);
     lastCycleStart = start;
+    // Optionally, clear current transactions after archiving:
+    // transactions = []; transactions.forEach(t => deleteDoc(doc(db,"transactions",t.id)));
   }
 
   const filtered = transactions.filter(t => {
@@ -291,74 +229,46 @@ function render() {
   const list = document.getElementById("list");
   list.innerHTML = "";
   filtered.slice().reverse().forEach(t => {
-    const row = document.createElement("div");
-    row.className = "row";
-
-    const inner = document.createElement("div");
-    inner.innerHTML = `<span>${t.desc}</span><span>${formatCurrency(t.amt)}</span>`;
-
+    const row = document.createElement("div"); row.className = "row";
+    const inner = document.createElement("div"); inner.innerHTML = `<span>${t.desc}</span><span>${formatCurrency(t.amt)}</span>`;
     const actions = document.createElement("div");
-    const editBtn = document.createElement("button");
-    editBtn.textContent = "Edit";
-    editBtn.onclick = () => editTransaction(t.id, t.desc, t.amt);
-
-    const delBtn = document.createElement("button");
-    delBtn.textContent = "Delete";
-    delBtn.onclick = () => deleteTransaction(t.id);
-
-    actions.appendChild(editBtn);
-    actions.appendChild(delBtn);
-
-    row.appendChild(inner);
-    row.appendChild(actions);
-    list.appendChild(row);
+    const editBtn = document.createElement("button"); editBtn.textContent="Edit"; editBtn.onclick = ()=>editTransaction(t.id,t.desc,t.amt);
+    const delBtn = document.createElement("button"); delBtn.textContent="Delete"; delBtn.onclick = ()=>deleteTransaction(t.id);
+    actions.appendChild(editBtn); actions.appendChild(delBtn);
+    row.appendChild(inner); row.appendChild(actions); list.appendChild(row);
   });
 }
 
 // --- Archive old transactions ---
 async function archiveOldTransactions(cycleStart, nextCycleStart) {
-  const oldTransactions = transactions.filter(t => {
-    const d = new Date(t.date);
-    return d >= cycleStart && d < nextCycleStart;
-  });
-
-  for (let t of oldTransactions) {
-    await addDoc(collection(db, "history"), { ...t, cycleStart: cycleStart.toISOString() });
-  }
+  const oldTransactions = transactions.filter(t => { const d=new Date(t.date); return d>=cycleStart && d<nextCycleStart; });
+  for (let t of oldTransactions) { await addDoc(collection(db,"history"), {...t, cycleStart: cycleStart.toISOString()}); }
 }
 
 // --- Export to Excel ---
 async function exportToExcel() {
   try {
-    const allDocs = await getDocs(collection(db, "transactions"));
-    const historyDocs = await getDocs(collection(db, "history"));
-
-    const allData = [
-      ...allDocs.docs.map(d => ({...d.data(), type: "Current"})),
-      ...historyDocs.docs.map(d => ({...d.data(), type: "History"}))
-    ];
-
+    const allDocs = await getDocs(collection(db,"transactions"));
+    const historyDocs = await getDocs(collection(db,"history"));
+    const allData = [...allDocs.docs.map(d=>({...d.data(),type:"Current"})), ...historyDocs.docs.map(d=>({...d.data(),type:"History"}))];
     const worksheet = XLSX.utils.json_to_sheet(allData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Budget");
-    XLSX.writeFile(workbook, "Budget_Transactions.xlsx");
-  } catch(err) {
-    console.error("Export failed", err);
-    alert("Export failed. Check console.");
-  }
+    XLSX.writeFile(workbook,"Budget_Transactions.xlsx");
+  } catch(err){console.error("Export failed",err); alert("Export failed. Check console.");}
 }
 
 // --- Firestore Real-Time Listener ---
-const q = query(collection(db,"transactions"), orderBy("date", "asc"));
-onSnapshot(q, snapshot => {
-  transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  render();
-});
+const q = query(collection(db,"transactions"), orderBy("date","asc"));
+onSnapshot(q, snapshot => { transactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); render(); });
 
-// --- Event Listeners ---
+// --- Load budget on start ---
+loadBudget();
+
+// --- Event listeners ---
 document.getElementById("addBtn").addEventListener("click", addTransaction);
+document.getElementById("updateBudgetBtn").addEventListener("click", updateBudget);
 document.getElementById("exportBtn").addEventListener("click", exportToExcel);
-
 </script>
 </body>
 </html>
