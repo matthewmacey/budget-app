@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Budget</title>
+
+<style>
+body {
+  font-family: -apple-system, BlinkMacSystemFont;
+  margin: 0;
+  background: #f2f2f7;
+}
+
+.container {
+  padding: 20px;
+}
+
+.card {
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 15px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
+h1 {
+  text-align: center;
+  font-size: 22px;
+}
+
+.stat {
+  display: flex;
+  justify-content: space-between;
+  margin: 6px 0;
+}
+
+.subtle {
+  font-size: 13px;
+  color: gray;
+  margin-top: 5px;
+}
+
+.progress {
+  height: 10px;
+  background: #e5e5ea;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.bar {
+  height: 100%;
+  width: 0%;
+  background: #34c759;
+  transition: 0.3s;
+}
+
+.red { background: #ff3b30; }
+.yellow { background: #ffcc00; }
+
+input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+
+button {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  background: black;
+  color: white;
+  font-size: 16px;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>2-Week Budget</h1>
+
+<div class="card">
+  <div class="stat"><span>Budget</span><input id="budget" type="number" value="1200"></div>
+  <div class="stat"><span>Spent</span><span id="spent">$0</span></div>
+  <div class="stat"><span>Remaining</span><span id="remaining">$0</span></div>
+
+  <div id="cycle" class="subtle"></div>
+  <div id="pace" class="subtle"></div>
+
+  <div class="progress">
+    <div id="bar" class="bar"></div>
+  </div>
+</div>
+
+<div class="card">
+  <input id="desc" placeholder="What did you buy?">
+  <input id="amount" type="number" placeholder="Amount">
+  <button onclick="add()">Add Purchase</button>
+</div>
+
+<div class="card" id="list"></div>
+
+</div>
+
+<script>
+let tx = JSON.parse(localStorage.getItem("tx") || "[]");
+
+// 🔑 Fixed anchor: March 19, 2026
+const anchor = new Date("2026-03-19");
+
+function getCycleStart() {
+  let now = new Date();
+  let diffDays = Math.floor((now - anchor) / (1000 * 60 * 60 * 24));
+  let cycleNumber = Math.floor(diffDays / 14);
+
+  let start = new Date(anchor);
+  start.setDate(anchor.getDate() + cycleNumber * 14);
+
+  return start;
+}
+
+function save() {
+  localStorage.setItem("tx", JSON.stringify(tx));
+}
+
+function add() {
+  let descEl = document.getElementById("desc");
+  let amtEl = document.getElementById("amount");
+
+  let desc = descEl.value;
+  let amt = parseFloat(amtEl.value);
+
+  if (!desc || !amt) return;
+
+  tx.push({ desc, amt, date: new Date() });
+
+  save();
+  render();
+
+  descEl.value = "";
+  amtEl.value = "";
+}
+
+function render() {
+  let start = getCycleStart();
+  let end = new Date(start);
+  end.setDate(start.getDate() + 13);
+
+  let now = new Date();
+
+  let filtered = tx.filter(t => {
+    let d = new Date(t.date);
+    return d >= start && d <= end;
+  });
+
+  let spent = filtered.reduce((a, b) => a + b.amt, 0);
+  let budget = parseFloat(document.getElementById("budget").value);
+
+  let remaining = budget - spent;
+
+  document.getElementById("spent").innerText = "$" + spent.toFixed(2);
+  document.getElementById("remaining").innerText = "$" + remaining.toFixed(2);
+
+  // Progress bar (budget usage)
+  let percent = (spent / budget) * 100;
+  let bar = document.getElementById("bar");
+
+  bar.style.width = percent + "%";
+  bar.className = "bar";
+
+  if (percent > 100) bar.classList.add("red");
+  else if (percent > 75) bar.classList.add("yellow");
+
+  // Cycle display
+  document.getElementById("cycle").innerText =
+    "Cycle: " + start.toLocaleDateString() + " - " + end.toLocaleDateString();
+
+  // 🔥 Pace calculation (THIS IS THE POWER FEATURE)
+  let totalDays = 14;
+  let daysElapsed = Math.floor((now - start) / (1000 * 60 * 60 * 24)) + 1;
+  if (daysElapsed < 1) daysElapsed = 1;
+  if (daysElapsed > 14) daysElapsed = 14;
+
+  let timePct = (daysElapsed / totalDays) * 100;
+  let spendPct = (spent / budget) * 100;
+
+  document.getElementById("pace").innerText =
+    "Used " + timePct.toFixed(0) + "% of time, " + spendPct.toFixed(0) + "% of budget";
+
+  // Transaction list
+  let list = document.getElementById("list");
+  list.innerHTML = "";
+
+  filtered.reverse().forEach(t => {
+    let row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span>${t.desc}</span><span>$${t.amt.toFixed(2)}</span>`;
+    list.appendChild(row);
+  });
+}
+
+render();
+</script>
+
+</body>
+</html>
