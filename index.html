@@ -88,6 +88,7 @@ button {
     <option>Kids</option>
     <option>Bills</option>
     <option>Entertainment</option>
+    <option>Alcohol</option>
     <option>Other</option>
   </select>
   <button id="addBtn">Add Purchase</button>
@@ -96,7 +97,6 @@ button {
 
 <div class="card" id="list"></div>
 
-<!-- Edit Modal -->
 <div id="editModal">
   <div class="modal-content">
     <h3>Edit Transaction</h3>
@@ -109,6 +109,7 @@ button {
       <option>Kids</option>
       <option>Bills</option>
       <option>Entertainment</option>
+      <option>Alcohol</option>
       <option>Other</option>
     </select>
     <div style="display:flex; justify-content:space-between;">
@@ -163,7 +164,7 @@ const editCategory=document.getElementById("editCategory");
 const saveEditBtn=document.getElementById("saveEditBtn");
 const cancelEditBtn=document.getElementById("cancelEditBtn");
 
-// AI categorization
+// AI categorization including alcohol
 function categorizeAI(desc){
   const d=desc.toLowerCase();
   if(/food|restaurant|coffee|pizza|chipotle|starbucks/.test(d)) return "Food";
@@ -172,6 +173,7 @@ function categorizeAI(desc){
   if(/kid|school|toy|diaper/.test(d)) return "Kids";
   if(/rent|bill|electric|water|internet/.test(d)) return "Bills";
   if(/movie|netflix|concert|game/.test(d)) return "Entertainment";
+  if(/beer|wine|cocktail|liquor|vodka|whiskey/.test(d)) return "Alcohol";
   return "Other";
 }
 
@@ -190,20 +192,7 @@ onSnapshot(cycleDoc,s=>{
 // Load transactions
 async function loadTransactions(){
   const snap=await getDocs(collection(db,"transactions"));
-  let migrate=false;
-  transactions=snap.docs.map(d=>{
-    const data=d.data();
-    if(!data.date||!data.category) migrate=true;
-    return {id:d.id,...data};
-  });
-  if(migrate){
-    for(const t of transactions){
-      const updates={};
-      if(!t.date) updates.date=new Date().toISOString();
-      if(!t.category) updates.category=categorizeAI(t.desc||"");
-      if(Object.keys(updates).length) await updateDoc(doc(db,"transactions",t.id),updates);
-    }
-  }
+  transactions=snap.docs.map(d=>({id:d.id,...d.data()}));
   startRealtime();
 }
 
@@ -212,14 +201,36 @@ function startRealtime(){
   const q=query(collection(db,"transactions"), orderBy("date","asc"));
   onSnapshot(q,snap=>{
     transactions=snap.docs.map(d=>({id:d.id,...d.data()}));
+    checkCycleReset();
     render();
   });
 }
 
-// Render function
+// Check if cycle ended and archive
+async function checkCycleReset(){
+  if(!cycleAnchor) return;
+  const now=new Date(); now.setHours(0,0,0,0);
+  const diffDays=Math.floor((now-cycleAnchor)/86400000);
+  if(diffDays>=14){
+    // archive current cycle transactions
+    const cycleStart=new Date(cycleAnchor);
+    const cycleEnd=new Date(cycleStart); cycleEnd.setDate(cycleStart.getDate()+13);
+    const cycleTx = transactions.filter(t=>{
+      const d=new Date(t.date); return d>=cycleStart && d<=cycleEnd;
+    });
+    for(const t of cycleTx){
+      await addDoc(collection(db,"history"),{...t, cycleStart:cycleStart.toISOString(), cycleEnd:cycleEnd.toISOString()});
+      await deleteDoc(doc(db,"transactions",t.id));
+    }
+    // advance cycle
+    const newAnchor=new Date(cycleAnchor); newAnchor.setDate(cycleAnchor.getDate()+14);
+    await setDoc(cycleDoc,{start:newAnchor.toISOString()});
+  }
+}
+
+// Render
 function render(){
   if(!cycleAnchor) return;
-
   const now=new Date(); now.setHours(0,0,0,0);
   const diffDays=Math.floor((now-cycleAnchor)/86400000);
   const cycleIndex=Math.floor(diffDays/14);
@@ -279,16 +290,10 @@ async function addTransaction(){
   desc.value=""; amount.value=""; category.value="";
 }
 
-// Open edit modal
+// Edit modal
 window.openEdit=(id,d,a,c)=>{
-  editId=id;
-  editDesc.value=d;
-  editAmount.value=a;
-  editCategory.value=c;
-  editModal.style.display="flex";
+  editId=id; editDesc.value=d; editAmount.value=a; editCategory.value=c; editModal.style.display="flex";
 };
-
-// Save edit
 saveEditBtn.onclick=async()=>{
   if(!editId) return;
   await updateDoc(doc(db,"transactions",editId),{
@@ -296,10 +301,8 @@ saveEditBtn.onclick=async()=>{
     amt:parseFloat(editAmount.value),
     category:editCategory.value
   });
-  editModal.style.display="none";
+  editModal.style.display="none"; editId=null;
 };
-
-// Cancel edit
 cancelEditBtn.onclick=()=>{editModal.style.display="none"; editId=null;};
 
 // Delete
@@ -331,6 +334,7 @@ exportBtn.onclick=exportToExcel;
 
 // Init
 loadTransactions();
+
 </script>
 </body>
 </html>
