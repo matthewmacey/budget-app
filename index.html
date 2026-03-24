@@ -4,11 +4,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Bi-Weekly Budget</title>
 
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Budget">
-<link rel="apple-touch-icon" href="icon.png">
-
-<!-- SheetJS for Excel export -->
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
 <style>
@@ -16,17 +11,89 @@ body { font-family: -apple-system; margin: 0; background: #f2f2f7; }
 .container { padding: 20px; }
 .card { background: white; border-radius: 16px; padding: 16px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
 h1 { text-align: center; }
-.stat { display: flex; justify-content: space-between; margin: 6px 0; }
+
+/* Budget row alignment fix */
+.stat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 6px 0;
+}
+
+/* Smaller budget input */
+#budget {
+  width: 120px;
+  text-align: right;
+  padding: 8px;
+  font-size: 16px;
+}
+
+/* Inputs */
+input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #ddd;
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+
+/* Green theme buttons */
+button {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: none;
+  font-size: 14px;
+  margin-left: 5px;
+}
+
+#addBtn, #updateBudgetBtn, #exportBtn {
+  width: 100%;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  background: #16a34a;
+  color: white;
+  font-size: 16px;
+  margin-top: 5px;
+}
+
+/* Stats */
 .subtle { font-size: 13px; color: gray; }
-.progress { height: 10px; background: #e5e5ea; border-radius: 10px; overflow: hidden; margin-top: 10px; }
-.bar { height: 100%; width: 0%; background: #34c759; transition: 0.3s; }
-.red { background: #ff3b30 !important; }
-.yellow { background: #ffcc00 !important; }
-input { width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #ddd; margin-bottom: 10px; font-size: 16px; }
-button { padding: 6px 10px; border-radius: 8px; border: none; font-size: 14px; margin-left: 5px; }
-#addBtn, #updateBudgetBtn, #exportBtn { width: 100%; padding: 14px; border-radius: 12px; border: none; background: black; color: white; font-size: 16px; margin-top: 5px; }
-.row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; }
-.row div { display: flex; align-items: center; gap: 10px; }
+
+/* Progress */
+.progress {
+  height: 10px;
+  background: #e5e5ea;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.bar {
+  height: 100%;
+  width: 0%;
+  background: #16a34a;
+  transition: 0.3s;
+}
+
+.red { background: #dc2626 !important; }
+.yellow { background: #facc15 !important; }
+
+/* Transactions */
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.row div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 </style>
 </head>
 
@@ -37,7 +104,7 @@ button { padding: 6px 10px; border-radius: 8px; border: none; font-size: 14px; m
 
 <div class="card">
   <div class="stat">
-    <span>Budget</span>
+    <span style="padding-top:2px;">Budget</span>
     <input id="budget" value="$1,200">
   </div>
   <button id="updateBudgetBtn">Update Budget</button>
@@ -67,41 +134,43 @@ button { padding: 6px 10px; border-radius: 8px; border: none; font-size: 14px; m
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
 import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, updateDoc, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-analytics.js";
 
 // Firebase config
 const firebaseConfig = {
-  apiKey: "AIzaSyA1KSyrh5UY3omenJMK2IBCH-fTvVCeIc4",
+  apiKey: "AIzaSy...",
   authDomain: "biweekly-budget-a5dac.firebaseapp.com",
   projectId: "biweekly-budget-a5dac",
-  storageBucket: "biweekly-budget-a5dac.firebasestorage.app",
-  messagingSenderId: "832349348274",
-  appId: "1:832349348274:web:293ca1023fb060b20b04ab",
-  measurementId: "G-4KDSBKEQ51"
 };
 
 const app = initializeApp(firebaseConfig);
-getAnalytics(app);
 const db = getFirestore(app);
 
 let transactions = [];
 let budgetValue = 1200;
 let lastCycleStart = null;
+
+/* --- FIXED CYCLE LOGIC --- */
 const anchor = new Date("2026-03-19");
 
-// --- Utilities ---
-function formatCurrency(num) { return "$" + num.toLocaleString(); }
-function parseCurrency(str) { return parseFloat(str.replace(/[^0-9.-]+/g,"")) || 0; }
-
 function getCycleStart(date = new Date()) {
-  const diffDays = Math.floor((date - anchor) / (1000*60*60*24));
-  const cycleNumber = Math.floor(diffDays / 14);
+  const diff = Math.floor((date - anchor) / (1000 * 60 * 60 * 24));
+  const cycleIndex = Math.floor(diff / 14);
   const start = new Date(anchor);
-  start.setDate(anchor.getDate() + cycleNumber * 14);
+  start.setDate(anchor.getDate() + (cycleIndex * 14));
   return start;
 }
 
-// --- Load & sync budget across devices ---
+function getCycleEnd(start) {
+  const end = new Date(start);
+  end.setDate(start.getDate() + 13);
+  return end;
+}
+
+/* --- Utilities --- */
+function formatCurrency(num) { return "$" + num.toLocaleString(); }
+function parseCurrency(str) { return parseFloat(str.replace(/[^0-9.-]+/g,"")) || 0; }
+
+/* --- Budget Sync --- */
 const budgetDoc = doc(db, "settings", "currentBudget");
 onSnapshot(budgetDoc, snap => {
   if (snap.exists()) {
@@ -109,133 +178,143 @@ onSnapshot(budgetDoc, snap => {
     document.getElementById("budget").value = formatCurrency(budgetValue);
     render();
   } else {
-    // initialize budget if missing
     setDoc(budgetDoc, { amount: budgetValue });
   }
 });
 
-// --- Update budget ---
 async function updateBudget() {
   const input = document.getElementById("budget");
   budgetValue = parseCurrency(input.value);
   input.value = formatCurrency(budgetValue);
-  try {
-    await setDoc(budgetDoc, { amount: budgetValue });
-  } catch(err){ console.error("Failed to update budget",err); alert("Failed to update budget. Check console."); }
-  render();
+  await setDoc(budgetDoc, { amount: budgetValue });
 }
 
-// --- Add transaction ---
+/* --- Transactions --- */
 async function addTransaction() {
   const desc = document.getElementById("desc").value.trim();
   const amt = parseFloat(document.getElementById("amount").value);
-  if (!desc) { alert("Enter a description"); return; }
-  if (!amt || amt <= 0) { alert("Enter a valid amount"); return; }
+  if (!desc || !amt) return;
 
-  try {
-    await addDoc(collection(db,"transactions"),{
-      desc,
-      amt,
-      date: new Date().toISOString()
-    });
-    document.getElementById("desc").value = "";
-    document.getElementById("amount").value = "";
-  } catch(err){ console.error("Failed to add transaction",err); alert("Failed to add transaction. Check console."); }
+  await addDoc(collection(db,"transactions"),{
+    desc, amt, date: new Date().toISOString()
+  });
+
+  document.getElementById("desc").value = "";
+  document.getElementById("amount").value = "";
 }
 
-// --- Delete / Edit ---
 async function deleteTransaction(id) {
-  if (!confirm("Delete this transaction?")) return;
-  transactions = transactions.filter(t => t.id !== id);
-  render();
   await deleteDoc(doc(db,"transactions",id));
 }
+
 async function editTransaction(id, oldDesc, oldAmt) {
-  const newDesc = prompt("Edit description:", oldDesc); if (newDesc===null) return;
-  const newAmtStr = prompt("Edit amount:", oldAmt); if (newAmtStr===null) return;
-  const newAmt = parseFloat(newAmtStr); if(isNaN(newAmt)||newAmt<=0){ alert("Invalid amount"); return; }
-  const index = transactions.findIndex(t=>t.id===id);
-  if(index!==-1){ transactions[index].desc=newDesc; transactions[index].amt=newAmt; render(); }
-  await updateDoc(doc(db,"transactions",id),{desc:newDesc, amt:newAmt});
+  const newDesc = prompt("Edit description:", oldDesc);
+  const newAmt = parseFloat(prompt("Edit amount:", oldAmt));
+  if (!newDesc || !newAmt) return;
+
+  await updateDoc(doc(db,"transactions",id), { desc:newDesc, amt:newAmt });
 }
 
-// --- Render ---
-function render() {
+/* --- Render --- */
+async function render() {
   const start = getCycleStart();
-  const end = new Date(start); end.setDate(start.getDate()+13);
+  const end = getCycleEnd(start);
   const now = new Date();
 
-  if(!lastCycleStart) lastCycleStart=start;
-  if(start>lastCycleStart){
-    archiveOldTransactions(lastCycleStart,start).then(async()=>{
-      // Auto clear current transactions after archiving
-      for(let t of transactions){ await deleteDoc(doc(db,"transactions",t.id)); }
-      transactions = [];
-      render();
-    });
-    lastCycleStart=start;
+  /* AUTO CLEAR */
+  if (!lastCycleStart) lastCycleStart = start;
+  if (start > lastCycleStart) {
+    await archiveOldTransactions(lastCycleStart, start);
+    for (let t of transactions) {
+      await deleteDoc(doc(db,"transactions",t.id));
+    }
+    transactions = [];
+    lastCycleStart = start;
   }
 
-  const filtered = transactions.filter(t=>{ const d=new Date(t.date); return d>=start && d<=end; });
+  const filtered = transactions.filter(t => {
+    const d = new Date(t.date);
+    return d >= start && d <= end;
+  });
+
   const spent = filtered.reduce((a,b)=>a+b.amt,0);
   const remaining = budgetValue - spent;
 
   document.getElementById("spent").innerText = formatCurrency(spent);
   document.getElementById("remaining").innerText = formatCurrency(remaining);
 
-  const totalDays=14;
-  let daysElapsed=Math.floor((now-start)/(1000*60*60*24))+1; daysElapsed=Math.min(Math.max(daysElapsed,1),14);
-  const timePct=(daysElapsed/totalDays)*100;
-  const spendPct=(spent/budgetValue)*100;
+  const daysElapsed = Math.min(Math.floor((now-start)/(1000*60*60*24))+1,14);
+  const timePct = (daysElapsed/14)*100;
+  const spendPct = (spent/budgetValue)*100;
 
-  document.getElementById("pace").innerText=`Used ${timePct.toFixed(0)}% of time, ${spendPct.toFixed(0)}% of budget`;
+  document.getElementById("pace").innerText =
+    `Used ${timePct.toFixed(0)}% of time, ${spendPct.toFixed(0)}% of budget`;
 
-  const bar=document.getElementById("bar");
-  const paceDiff=spendPct-timePct;
-  bar.style.width=spendPct+"%";
-  bar.className="bar";
-  if(paceDiff>15) bar.classList.add("red"); else if(paceDiff>5) bar.classList.add("yellow");
+  const bar = document.getElementById("bar");
+  bar.style.width = spendPct + "%";
+  bar.className = "bar";
+  if (spendPct - timePct > 15) bar.classList.add("red");
+  else if (spendPct - timePct > 5) bar.classList.add("yellow");
 
-  document.getElementById("cycle").innerText=`Cycle: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+  document.getElementById("cycle").innerText =
+    `Cycle: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
 
-  const list=document.getElementById("list");
-  list.innerHTML="";
-  filtered.slice().reverse().forEach(t=>{
-    const row=document.createElement("div"); row.className="row";
-    const inner=document.createElement("div"); inner.innerHTML=`<span>${t.desc}</span><span>${formatCurrency(t.amt)}</span>`;
-    const actions=document.createElement("div");
-    const editBtn=document.createElement("button"); editBtn.textContent="Edit"; editBtn.onclick=()=>editTransaction(t.id,t.desc,t.amt);
-    const delBtn=document.createElement("button"); delBtn.textContent="Delete"; delBtn.onclick=()=>deleteTransaction(t.id);
-    actions.appendChild(editBtn); actions.appendChild(delBtn);
-    row.appendChild(inner); row.appendChild(actions); list.appendChild(row);
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+
+  filtered.slice().reverse().forEach(t => {
+    const row = document.createElement("div");
+    row.className = "row";
+
+    row.innerHTML = `
+      <div>
+        <span>${t.desc}</span>
+        <span>${formatCurrency(t.amt)}</span>
+      </div>
+      <div>
+        <button onclick="editTransaction('${t.id}','${t.desc}',${t.amt})">Edit</button>
+        <button onclick="deleteTransaction('${t.id}')">Delete</button>
+      </div>
+    `;
+    list.appendChild(row);
   });
 }
 
-// --- Archive old transactions ---
-async function archiveOldTransactions(cycleStart,nextCycleStart){
-  const oldTransactions=transactions.filter(t=>{ const d=new Date(t.date); return d>=cycleStart && d<nextCycleStart; });
-  for(let t of oldTransactions){ await addDoc(collection(db,"history"),{...t, cycleStart:cycleStart.toISOString()}); }
+/* --- Archive --- */
+async function archiveOldTransactions(start,next){
+  const old = transactions.filter(t=>{
+    const d=new Date(t.date);
+    return d>=start && d<next;
+  });
+  for(let t of old){
+    await addDoc(collection(db,"history"), t);
+  }
 }
 
-// --- Export ---
+/* --- Export --- */
 async function exportToExcel(){
-  const allDocs=await getDocs(collection(db,"transactions"));
-  const historyDocs=await getDocs(collection(db,"history"));
-  const allData=[...allDocs.docs.map(d=>({...d.data(),type:"Current"})), ...historyDocs.docs.map(d=>({...d.data(),type:"History"}))];
-  const worksheet=XLSX.utils.json_to_sheet(allData);
-  const workbook=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook,worksheet,"Budget");
-  XLSX.writeFile(workbook,"Budget_Transactions.xlsx");
+  const docs = await getDocs(collection(db,"transactions"));
+  const data = docs.docs.map(d=>d.data());
+  const ws = XLSX.utils.json_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Budget");
+  XLSX.writeFile(wb,"budget.xlsx");
 }
 
-// --- Firestore listener ---
-const q=query(collection(db,"transactions"),orderBy("date","asc"));
-onSnapshot(q,snapshot=>{ transactions=snapshot.docs.map(doc=>({id:doc.id,...doc.data()})); render(); });
+/* --- Listener --- */
+const q = query(collection(db,"transactions"), orderBy("date","asc"));
+onSnapshot(q, snap => {
+  transactions = snap.docs.map(d=>({id:d.id,...d.data()}));
+  render();
+});
 
-// --- Event listeners ---
-document.getElementById("addBtn").addEventListener("click", addTransaction);
-document.getElementById("updateBudgetBtn").addEventListener("click", updateBudget);
-document.getElementById("exportBtn").addEventListener("click", exportToExcel);
+/* --- Events --- */
+window.editTransaction = editTransaction;
+window.deleteTransaction = deleteTransaction;
+
+document.getElementById("addBtn").onclick = addTransaction;
+document.getElementById("updateBudgetBtn").onclick = updateBudget;
+document.getElementById("exportBtn").onclick = exportToExcel;
 
 </script>
 </body>
