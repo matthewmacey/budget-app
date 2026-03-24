@@ -9,7 +9,7 @@
 
 <style>
 * { box-sizing: border-box; }
-body { margin:0; font-family:-apple-system; background:#eef2f7; }
+body { margin:0; font-family:-apple-system; background:#eef7ee; }
 
 .header {
   background: linear-gradient(135deg,#16a34a,#22c55e);
@@ -34,6 +34,7 @@ input, select {
 
 button {
   border:none; border-radius:10px; padding:6px 10px; margin-left:5px; cursor:pointer;
+  background:#16a34a; color:white; font-weight:bold;
 }
 
 .row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #eee; align-items:center; }
@@ -46,6 +47,10 @@ button {
 .bar { height:100%; width:0%; background:#34c759; transition:0.3s; }
 .bar.yellow { background:#ffcc00; }
 .bar.red { background:#ff3b30; }
+
+/* Transaction row formatting */
+.transaction-desc { font-weight:bold; }
+.transaction-amt { color:#16a34a; margin-left:10px; font-weight:bold; }
 </style>
 </head>
 <body>
@@ -53,24 +58,24 @@ button {
 <div class="header"><h2>Bi-Weekly Budget</h2></div>
 <div class="container">
 
+<!-- Budget Card -->
 <div class="card">
   <div class="stat">
     <span>Budget</span>
     <button id="updateBudgetBtn">Update</button>
     <input id="budget">
   </div>
-
   <div><strong>Spent:</strong> <span id="spent">$0</span></div>
   <div><strong>Remaining:</strong> <span id="remaining">$0</span></div>
-
   <div class="progress"><div id="bar" class="bar"></div></div>
-
   <div id="cycle" class="subtle"></div>
   <div id="insights" class="subtle"></div>
 </div>
 
+<!-- Pie Chart -->
 <div class="card"><canvas id="chart"></canvas></div>
 
+<!-- Add Transaction -->
 <div class="card">
   <input id="desc" placeholder="What did you buy?">
   <input id="amount" type="number" placeholder="Amount">
@@ -88,11 +93,12 @@ button {
   <button id="exportBtn">Export to Excel</button>
 </div>
 
+<!-- Transaction List -->
 <div class="card" id="list"></div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
+import { getFirestore, collection, doc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
 // 🔒 Locked Firebase config
 const firebaseConfig = {
@@ -104,6 +110,7 @@ const firebaseConfig = {
   appId: "1:832349348274:web:293ca1023fb060b20b04ab",
   measurementId: "G-4KDSBKEQ51"
 };
+
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
@@ -125,12 +132,11 @@ const addBtn = document.getElementById("addBtn");
 const exportBtn = document.getElementById("exportBtn");
 const updateBudgetBtn = document.getElementById("updateBudgetBtn");
 
-// Budget and cycle docs
 const budgetDoc = doc(db,"settings","currentBudget");
 const cycleDoc = doc(db,"settings","cycle");
 let cycleAnchor = null;
 
-// 🟢 AI-style categorization (basic heuristic)
+// 🟢 AI-style categorization
 function categorizeAI(desc){
   const d = desc.toLowerCase();
   if(/food|restaurant|coffee|pizza|chipotle|starbucks/.test(d)) return "Food";
@@ -154,12 +160,12 @@ onSnapshot(cycleDoc,s=>{
   else setDoc(cycleDoc,{start:new Date(2026,2,19).toISOString()});
 });
 
-// Load and migrate
+// Load & migrate transactions
 async function loadTransactions(){
   const snap = await getDocs(collection(db,"transactions"));
   let needsMigration=false;
   transactions = snap.docs.map(d=>{
-    const data = d.data();
+    const data=d.data();
     if(!data.date || !data.category) needsMigration=true;
     return {id:d.id, ...data};
   });
@@ -173,7 +179,6 @@ async function loadTransactions(){
     }
     console.log("✅ Migration complete");
   }
-
   startRealtime();
 }
 
@@ -190,40 +195,40 @@ function startRealtime(){
 function render(){
   if(!cycleAnchor) return;
 
-  const now = new Date(); now.setHours(0,0,0,0);
-  const diffDays = Math.floor((now-cycleAnchor)/86400000);
-  const cycleIndex = Math.floor(diffDays/14);
-  const cycleStart = new Date(cycleAnchor); cycleStart.setDate(cycleAnchor.getDate()+cycleIndex*14);
-  const cycleEnd = new Date(cycleStart); cycleEnd.setDate(cycleStart.getDate()+13);
-  cycleEl.innerText = `Cycle: ${cycleStart.toLocaleDateString()} - ${cycleEnd.toLocaleDateString()}`;
+  const now=new Date(); now.setHours(0,0,0,0);
+  const diffDays=Math.floor((now-cycleAnchor)/86400000);
+  const cycleIndex=Math.floor(diffDays/14);
+  const cycleStart=new Date(cycleAnchor); cycleStart.setDate(cycleAnchor.getDate()+cycleIndex*14);
+  const cycleEnd=new Date(cycleStart); cycleEnd.setDate(cycleStart.getDate()+13);
+  cycleEl.innerText=`Cycle: ${cycleStart.toLocaleDateString()} - ${cycleEnd.toLocaleDateString()}`;
 
   const budgetVal = parseFloat(budgetInput.value.replace(/[^0-9.-]+/g,""))||1200;
   const filtered = transactions.filter(t=>{
-    const d = new Date(t.date);
+    const d=new Date(t.date);
     return d>=cycleStart && d<=cycleEnd;
   });
 
   const spent = filtered.reduce((a,b)=>a+b.amt,0);
-  spentEl.innerText = "$"+spent;
-  remainingEl.innerText = "$"+(budgetVal-spent);
+  spentEl.innerText="$"+spent.toLocaleString();
+  remainingEl.innerText="$"+(budgetVal-spent).toLocaleString();
 
   // Progress bar
   const timePct = Math.min(((now-cycleStart)/86400000)/14*100,100);
   const spendPct = Math.min(spent/budgetVal*100,100);
   const bar = document.getElementById("bar");
-  bar.style.width = spendPct+"%";
+  bar.style.width=spendPct+"%";
   bar.className="bar";
   if(spendPct>timePct+15) bar.classList.add("red");
   else if(spendPct>timePct+5) bar.classList.add("yellow");
 
-  // Category totals & pie chart
+  // Pie chart
   const totals={};
   filtered.forEach(t=>totals[t.category]=(totals[t.category]||0)+t.amt);
   if(chart) chart.destroy();
   chart=new Chart(chartEl,{type:"pie",data:{labels:Object.keys(totals),datasets:[{data:Object.values(totals)}]}});
 
-  const topCat = Object.entries(totals).sort((a,b)=>b[1]-a[1])[0];
-  insightsEl.innerText = topCat ? `Top spending: ${topCat[0]} (${Math.round(topCat[1]/spent*100)}%)` : "";
+  const topCat=Object.entries(totals).sort((a,b)=>b[1]-a[1])[0];
+  insightsEl.innerText=topCat ? `Top spending: ${topCat[0]} (${Math.round(topCat[1]/spent*100)}%)` : "";
 
   // Transaction list
   list.innerHTML="";
@@ -232,7 +237,8 @@ function render(){
     row.className="row";
     row.innerHTML=`
       <div>
-        <strong>${t.desc}</strong>
+        <span class="transaction-desc">${t.desc}</span>
+        <span class="transaction-amt">$${t.amt.toLocaleString()}</span>
         <div class="subtle">${t.category}</div>
       </div>
       <div class="actions">
@@ -246,35 +252,42 @@ function render(){
 
 // Add transaction
 async function addTransaction(){
-  const descVal = desc.value.trim();
-  const amtVal = parseFloat(amount.value);
+  const descVal=desc.value.trim();
+  const amtVal=parseFloat(amount.value);
   if(!descVal || !amtVal) return;
 
-  const catVal = category.value || categorizeAI(descVal);
+  const catVal=category.value || categorizeAI(descVal);
   await addDoc(collection(db,"transactions"),{desc:descVal, amt:amtVal, category:catVal, date:new Date().toISOString()});
   desc.value=""; amount.value=""; category.value="";
 }
 
-// Edit/Delete functions
+// Edit transaction with dropdown
 window.editTransaction = async(id,oldDesc,oldAmt,oldCat)=>{
-  const newDesc = prompt("Edit description:",oldDesc);
-  if(newDesc===null) return;
-  const newAmt = parseFloat(prompt("Edit amount:",oldAmt));
-  if(isNaN(newAmt)) return;
-  const newCat = prompt("Edit category:",oldCat) || categorizeAI(newDesc);
-  await updateDoc(doc(db,"transactions",id),{desc:newDesc, amt:newAmt, category:newCat});
+  const modalDesc = prompt("Edit description:", oldDesc);
+  if(modalDesc===null) return;
+  const modalAmt = parseFloat(prompt("Edit amount:", oldAmt));
+  if(isNaN(modalAmt)) return;
+
+  // Dropdown for category
+  const categories=["Food","Travel","Shopping","Kids","Bills","Entertainment","Other"];
+  const newCat = prompt("Edit category (Food,Travel,Shopping,Kids,Bills,Entertainment,Other):", oldCat) || categorizeAI(modalDesc);
+  if(!categories.includes(newCat)) categories.push(newCat);
+
+  await updateDoc(doc(db,"transactions",id),{desc:modalDesc, amt:modalAmt, category:newCat});
 };
+
+// Delete
 window.deleteTransaction = async id => await deleteDoc(doc(db,"transactions",id));
 
-// Export
+// Export Excel
 async function exportToExcel(){
   const snap=await getDocs(collection(db,"transactions"));
   const data = snap.docs.map(d=>{
     const t=d.data();
     return {Description:t.desc, Amount:t.amt, Category:t.category, Date:t.date};
   });
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
+  const ws=XLSX.utils.json_to_sheet(data);
+  const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,"Budget");
   XLSX.writeFile(wb,"budget.xlsx");
 }
@@ -287,8 +300,8 @@ updateBudgetBtn.onclick=async ()=>{
 };
 
 // Event listeners
-addBtn.onclick = addTransaction;
-exportBtn.onclick = exportToExcel;
+addBtn.onclick=addTransaction;
+exportBtn.onclick=exportToExcel;
 
 // Initialize
 loadTransactions();
