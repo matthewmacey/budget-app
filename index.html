@@ -7,25 +7,33 @@
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 
 <style>
+* { box-sizing: border-box; } /* FIXES OVERFLOW */
+
 body { font-family: -apple-system; margin: 0; background: #f2f2f7; }
 .container { padding: 20px; }
-.card { background: white; border-radius: 16px; padding: 16px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+
+.card {
+  background: white;
+  border-radius: 16px;
+  padding: 16px;
+  margin-bottom: 15px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+
 h1 { text-align: center; }
 
-/* Budget row alignment fix */
+/* Budget row */
 .stat {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin: 6px 0;
 }
 
 /* Smaller budget input */
 #budget {
-  width: 120px;
+  width: 110px;
   text-align: right;
   padding: 8px;
-  font-size: 16px;
 }
 
 /* Inputs */
@@ -38,28 +46,20 @@ input {
   font-size: 16px;
 }
 
-/* Green theme buttons */
+/* Buttons */
 button {
-  padding: 6px 10px;
-  border-radius: 8px;
   border: none;
-  font-size: 14px;
-  margin-left: 5px;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 16px;
 }
 
 #addBtn, #updateBudgetBtn, #exportBtn {
   width: 100%;
-  padding: 14px;
-  border-radius: 12px;
-  border: none;
   background: #16a34a;
   color: white;
-  font-size: 16px;
   margin-top: 5px;
 }
-
-/* Stats */
-.subtle { font-size: 13px; color: gray; }
 
 /* Progress */
 .progress {
@@ -72,27 +72,20 @@ button {
 
 .bar {
   height: 100%;
-  width: 0%;
   background: #16a34a;
-  transition: 0.3s;
 }
 
 .red { background: #dc2626 !important; }
 .yellow { background: #facc15 !important; }
 
+.subtle { font-size: 13px; color: gray; }
+
 /* Transactions */
 .row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid #eee;
-}
-
-.row div {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 </style>
 </head>
@@ -104,9 +97,10 @@ button {
 
 <div class="card">
   <div class="stat">
-    <span style="padding-top:2px;">Budget</span>
+    <span>Budget</span>
     <input id="budget" value="$1,200">
   </div>
+
   <button id="updateBudgetBtn">Update Budget</button>
 
   <div class="stat"><span>Spent</span><span id="spent">$0</span></div>
@@ -135,11 +129,10 @@ button {
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
 import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, updateDoc, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
-// Firebase config
 const firebaseConfig = {
   apiKey: "AIzaSy...",
   authDomain: "biweekly-budget-a5dac.firebaseapp.com",
-  projectId: "biweekly-budget-a5dac",
+  projectId: "biweekly-budget-a5dac"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -149,12 +142,17 @@ let transactions = [];
 let budgetValue = 1200;
 let lastCycleStart = null;
 
-/* --- FIXED CYCLE LOGIC --- */
-const anchor = new Date("2026-03-19");
+/* --- FIXED CYCLE (MIDNIGHT NORMALIZED) --- */
+const anchor = new Date(2026, 2, 19); // March = 2 (0-based)
+anchor.setHours(0,0,0,0);
 
 function getCycleStart(date = new Date()) {
-  const diff = Math.floor((date - anchor) / (1000 * 60 * 60 * 24));
-  const cycleIndex = Math.floor(diff / 14);
+  const d = new Date(date);
+  d.setHours(0,0,0,0);
+
+  const diffDays = Math.floor((d - anchor) / (1000*60*60*24));
+  const cycleIndex = Math.floor(diffDays / 14);
+
   const start = new Date(anchor);
   start.setDate(anchor.getDate() + (cycleIndex * 14));
   return start;
@@ -166,75 +164,74 @@ function getCycleEnd(start) {
   return end;
 }
 
-/* --- Utilities --- */
-function formatCurrency(num) { return "$" + num.toLocaleString(); }
-function parseCurrency(str) { return parseFloat(str.replace(/[^0-9.-]+/g,"")) || 0; }
+/* --- Utils --- */
+function formatCurrency(n){ return "$" + n.toLocaleString(); }
+function parseCurrency(s){ return parseFloat(s.replace(/[^0-9.-]/g,""))||0; }
 
 /* --- Budget Sync --- */
-const budgetDoc = doc(db, "settings", "currentBudget");
-onSnapshot(budgetDoc, snap => {
-  if (snap.exists()) {
+const budgetDoc = doc(db,"settings","currentBudget");
+
+onSnapshot(budgetDoc, snap=>{
+  if(snap.exists()){
     budgetValue = snap.data().amount;
     document.getElementById("budget").value = formatCurrency(budgetValue);
     render();
   } else {
-    setDoc(budgetDoc, { amount: budgetValue });
+    setDoc(budgetDoc,{amount:budgetValue});
   }
 });
 
-async function updateBudget() {
-  const input = document.getElementById("budget");
-  budgetValue = parseCurrency(input.value);
-  input.value = formatCurrency(budgetValue);
-  await setDoc(budgetDoc, { amount: budgetValue });
+async function updateBudget(){
+  const val = parseCurrency(document.getElementById("budget").value);
+  await setDoc(budgetDoc,{amount:val});
 }
 
 /* --- Transactions --- */
-async function addTransaction() {
+async function addTransaction(){
   const desc = document.getElementById("desc").value.trim();
   const amt = parseFloat(document.getElementById("amount").value);
-  if (!desc || !amt) return;
+  if(!desc || !amt) return;
 
   await addDoc(collection(db,"transactions"),{
     desc, amt, date: new Date().toISOString()
   });
 
-  document.getElementById("desc").value = "";
-  document.getElementById("amount").value = "";
+  document.getElementById("desc").value="";
+  document.getElementById("amount").value="";
 }
 
-async function deleteTransaction(id) {
+async function deleteTransaction(id){
   await deleteDoc(doc(db,"transactions",id));
 }
 
-async function editTransaction(id, oldDesc, oldAmt) {
-  const newDesc = prompt("Edit description:", oldDesc);
-  const newAmt = parseFloat(prompt("Edit amount:", oldAmt));
-  if (!newDesc || !newAmt) return;
+async function editTransaction(id,desc,amt){
+  const nd = prompt("Edit description:",desc);
+  const na = parseFloat(prompt("Edit amount:",amt));
+  if(!nd || !na) return;
 
-  await updateDoc(doc(db,"transactions",id), { desc:newDesc, amt:newAmt });
+  await updateDoc(doc(db,"transactions",id),{desc:nd, amt:na});
 }
 
 /* --- Render --- */
-async function render() {
+async function render(){
   const start = getCycleStart();
   const end = getCycleEnd(start);
   const now = new Date();
 
-  /* AUTO CLEAR */
-  if (!lastCycleStart) lastCycleStart = start;
-  if (start > lastCycleStart) {
-    await archiveOldTransactions(lastCycleStart, start);
-    for (let t of transactions) {
+  if(!lastCycleStart) lastCycleStart = start;
+
+  if(start > lastCycleStart){
+    await archive(lastCycleStart,start);
+    for(let t of transactions){
       await deleteDoc(doc(db,"transactions",t.id));
     }
-    transactions = [];
-    lastCycleStart = start;
+    transactions=[];
+    lastCycleStart=start;
   }
 
-  const filtered = transactions.filter(t => {
-    const d = new Date(t.date);
-    return d >= start && d <= end;
+  const filtered = transactions.filter(t=>{
+    const d=new Date(t.date);
+    return d>=start && d<=end;
   });
 
   const spent = filtered.reduce((a,b)=>a+b.amt,0);
@@ -243,8 +240,8 @@ async function render() {
   document.getElementById("spent").innerText = formatCurrency(spent);
   document.getElementById("remaining").innerText = formatCurrency(remaining);
 
-  const daysElapsed = Math.min(Math.floor((now-start)/(1000*60*60*24))+1,14);
-  const timePct = (daysElapsed/14)*100;
+  const days = Math.min(Math.floor((now-start)/(1000*60*60*24))+1,14);
+  const timePct = (days/14)*100;
   const spendPct = (spent/budgetValue)*100;
 
   document.getElementById("pace").innerText =
@@ -252,42 +249,38 @@ async function render() {
 
   const bar = document.getElementById("bar");
   bar.style.width = spendPct + "%";
-  bar.className = "bar";
-  if (spendPct - timePct > 15) bar.classList.add("red");
-  else if (spendPct - timePct > 5) bar.classList.add("yellow");
+  bar.className="bar";
+  if(spendPct-timePct>15) bar.classList.add("red");
+  else if(spendPct-timePct>5) bar.classList.add("yellow");
 
   document.getElementById("cycle").innerText =
     `Cycle: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
 
   const list = document.getElementById("list");
-  list.innerHTML = "";
+  list.innerHTML="";
 
-  filtered.slice().reverse().forEach(t => {
-    const row = document.createElement("div");
-    row.className = "row";
-
-    row.innerHTML = `
-      <div>
-        <span>${t.desc}</span>
-        <span>${formatCurrency(t.amt)}</span>
-      </div>
-      <div>
+  filtered.slice().reverse().forEach(t=>{
+    const row=document.createElement("div");
+    row.className="row";
+    row.innerHTML=`
+      <span>${t.desc} - ${formatCurrency(t.amt)}</span>
+      <span>
         <button onclick="editTransaction('${t.id}','${t.desc}',${t.amt})">Edit</button>
         <button onclick="deleteTransaction('${t.id}')">Delete</button>
-      </div>
+      </span>
     `;
     list.appendChild(row);
   });
 }
 
 /* --- Archive --- */
-async function archiveOldTransactions(start,next){
+async function archive(start,next){
   const old = transactions.filter(t=>{
     const d=new Date(t.date);
     return d>=start && d<next;
   });
   for(let t of old){
-    await addDoc(collection(db,"history"), t);
+    await addDoc(collection(db,"history"),t);
   }
 }
 
@@ -297,13 +290,13 @@ async function exportToExcel(){
   const data = docs.docs.map(d=>d.data());
   const ws = XLSX.utils.json_to_sheet(data);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Budget");
+  XLSX.utils.book_append_sheet(wb,ws,"Budget");
   XLSX.writeFile(wb,"budget.xlsx");
 }
 
 /* --- Listener --- */
-const q = query(collection(db,"transactions"), orderBy("date","asc"));
-onSnapshot(q, snap => {
+const q = query(collection(db,"transactions"),orderBy("date","asc"));
+onSnapshot(q,snap=>{
   transactions = snap.docs.map(d=>({id:d.id,...d.data()}));
   render();
 });
