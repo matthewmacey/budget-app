@@ -5,6 +5,7 @@
 <title>Budget</title>
 
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
 * { box-sizing: border-box; }
@@ -15,7 +16,6 @@ body {
   background: #eef2f7;
 }
 
-/* HEADER */
 .header {
   background: linear-gradient(135deg, #16a34a, #22c55e);
   color: white;
@@ -23,10 +23,8 @@ body {
   border-radius: 0 0 25px 25px;
 }
 
-/* CONTAINER */
 .container { padding: 15px; margin-top: -20px; }
 
-/* CARD */
 .card {
   background: white;
   border-radius: 18px;
@@ -35,27 +33,21 @@ body {
   box-shadow: 0 6px 18px rgba(0,0,0,0.05);
 }
 
-/* BUDGET ROW FIX */
 .stat {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-#budget {
-  width: 100px;
-  text-align: right;
-  padding: 6px;
-}
+#budget { width: 100px; text-align: right; padding: 6px; }
 
 #updateBudgetBtn {
   width: auto;
-  padding: 8px 10px;
+  padding: 6px 10px;
   font-size: 12px;
 }
 
-/* INPUT */
-input {
+input, select {
   width: 100%;
   padding: 14px;
   border-radius: 12px;
@@ -63,7 +55,6 @@ input {
   margin-bottom: 10px;
 }
 
-/* BUTTON */
 button {
   width: 100%;
   padding: 14px;
@@ -74,22 +65,6 @@ button {
   font-weight: bold;
 }
 
-/* CATEGORY GRID */
-.category-grid {
-  display: grid;
-  grid-template-columns: repeat(2,1fr);
-  gap: 10px;
-}
-
-.category-card {
-  background: #f9fafb;
-  padding: 10px;
-  border-radius: 12px;
-  text-align: center;
-  font-size: 14px;
-}
-
-/* TRANSACTIONS */
 .row {
   display: flex;
   justify-content: space-between;
@@ -103,9 +78,7 @@ button {
 
 <body>
 
-<div class="header">
-  <h2>Bi-Weekly Budget</h2>
-</div>
+<div class="header"><h2>Bi-Weekly Budget</h2></div>
 
 <div class="container">
 
@@ -120,20 +93,30 @@ button {
   <div><strong>Remaining:</strong> <span id="remaining">$0</span></div>
 
   <div id="cycle" class="subtle"></div>
-
-  <div class="progress">
-    <div id="bar" class="bar"></div>
-  </div>
+  <div id="insights" class="subtle"></div>
 </div>
 
-<!-- CATEGORY BREAKDOWN -->
+<!-- PIE CHART -->
 <div class="card">
-  <div class="category-grid" id="categories"></div>
+  <canvas id="chart"></canvas>
 </div>
 
 <div class="card">
   <input id="desc" placeholder="What did you buy?">
   <input id="amount" type="number" placeholder="Amount">
+
+  <!-- CATEGORY DROPDOWN -->
+  <select id="category">
+    <option value="">Auto</option>
+    <option>Food</option>
+    <option>Travel</option>
+    <option>Shopping</option>
+    <option>Kids</option>
+    <option>Bills</option>
+    <option>Entertainment</option>
+    <option>Other</option>
+  </select>
+
   <button id="addBtn">Add Purchase</button>
   <button id="exportBtn">Export to Excel</button>
 </div>
@@ -152,27 +135,28 @@ const db = getFirestore(app);
 let transactions = [];
 let budgetValue = 1200;
 let cycleAnchor = null;
+let chart;
 
-/* CATEGORY LOGIC */
+/* CATEGORY */
 function categorize(desc){
   const d = desc.toLowerCase();
-  if(d.match(/restaurant|coffee|food|pizza|chipotle|mcdonald/)) return "Food";
-  if(d.match(/gas|uber|train|flight/)) return "Travel";
-  if(d.match(/target|amazon|shop/)) return "Shopping";
-  if(d.match(/kid|school|toy/)) return "Kids";
-  if(d.match(/rent|mortgage|bill|electric/)) return "Bills";
-  if(d.match(/movie|netflix|game/)) return "Entertainment";
+  if(/food|restaurant|coffee|pizza|chipotle/.test(d)) return "Food";
+  if(/gas|uber|flight/.test(d)) return "Travel";
+  if(/amazon|target|shop/.test(d)) return "Shopping";
+  if(/kid|school/.test(d)) return "Kids";
+  if(/rent|bill|electric/.test(d)) return "Bills";
+  if(/movie|netflix/.test(d)) return "Entertainment";
   return "Other";
 }
 
-/* SHARED SETTINGS */
+/* SETTINGS */
 const budgetDoc = doc(db,"settings","currentBudget");
 const cycleDoc = doc(db,"settings","cycle");
 
 onSnapshot(budgetDoc,s=>{
   if(s.exists()){
     budgetValue=s.data().amount;
-    document.getElementById("budget").value="$"+budgetValue;
+    budget.value="$"+budgetValue;
     render();
   } else setDoc(budgetDoc,{amount:1200});
 });
@@ -198,18 +182,33 @@ function getEnd(s){ const e=new Date(s); e.setDate(s.getDate()+13); return e; }
 
 /* ADD */
 async function addTransaction(){
-  const desc=descEl.value.trim();
-  const amt=parseFloat(amountEl.value);
-  if(!desc||!amt) return;
+  const descVal=desc.value.trim();
+  const amt=parseFloat(amount.value);
+  if(!descVal||!amt) return;
 
-  const category = categorize(desc);
+  let cat = category.value;
+  if(!cat) cat = categorize(descVal);
 
   await addDoc(collection(db,"transactions"),{
-    desc, amt, category,
+    desc:descVal,
+    amt,
+    category:cat,
     date:new Date().toISOString()
   });
 
-  descEl.value=""; amountEl.value="";
+  desc.value=""; amount.value=""; category.value="";
+}
+
+/* EDIT */
+async function editTransaction(id,descVal,amtVal,catVal){
+  const nd=prompt("Edit desc:",descVal);
+  const na=parseFloat(prompt("Edit amount:",amtVal));
+  const nc=prompt("Edit category:",catVal);
+  if(!nd||!na) return;
+
+  await updateDoc(doc(db,"transactions",id),{
+    desc:nd, amt:na, category:nc||categorize(nd)
+  });
 }
 
 /* RENDER */
@@ -225,11 +224,10 @@ function render(){
   });
 
   const spent=filtered.reduce((a,b)=>a+b.amt,0);
-  document.getElementById("spent").innerText="$"+spent;
-  document.getElementById("remaining").innerText="$"+(budgetValue-spent);
+  spentEl.innerText="$"+spent;
+  remaining.innerText="$"+(budgetValue-spent);
 
-  document.getElementById("cycle").innerText=
-    `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+  cycle.innerText=`${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
 
   /* CATEGORY TOTALS */
   const totals={};
@@ -237,17 +235,29 @@ function render(){
     totals[t.category]=(totals[t.category]||0)+t.amt;
   });
 
-  const catDiv=document.getElementById("categories");
-  catDiv.innerHTML="";
-  Object.keys(totals).forEach(c=>{
-    const el=document.createElement("div");
-    el.className="category-card";
-    el.innerHTML=`<strong>${c}</strong><br>$${totals[c]}`;
-    catDiv.appendChild(el);
+  /* INSIGHTS */
+  let topCat="";
+  let max=0;
+  Object.entries(totals).forEach(([k,v])=>{
+    if(v>max){max=v; topCat=k;}
+  });
+
+  if(topCat){
+    const pct=((max/spent)*100).toFixed(0);
+    insights.innerText=`Top spending: ${topCat} (${pct}%)`;
+  }
+
+  /* CHART */
+  if(chart) chart.destroy();
+  chart = new Chart(document.getElementById("chart"), {
+    type: "pie",
+    data: {
+      labels: Object.keys(totals),
+      datasets: [{ data: Object.values(totals) }]
+    }
   });
 
   /* LIST */
-  const list=document.getElementById("list");
   list.innerHTML="";
   filtered.reverse().forEach(t=>{
     const row=document.createElement("div");
@@ -257,7 +267,11 @@ function render(){
         <strong>${t.desc}</strong>
         <div class="subtle">${t.category}</div>
       </div>
-      <div>$${t.amt}</div>
+      <div>
+        $${t.amt}
+        <button onclick="editTransaction('${t.id}','${t.desc}',${t.amt}','${t.category}')">Edit</button>
+        <button onclick="deleteTransaction('${t.id}')">X</button>
+      </div>
     `;
     list.appendChild(row);
   });
@@ -276,20 +290,25 @@ async function exportToExcel(){
 /* LISTENER */
 const q=query(collection(db,"transactions"),orderBy("date","asc"));
 onSnapshot(q,s=>{
-  transactions=s.docs.map(d=>d.data());
+  transactions=s.docs.map(d=>{
+    const data=d.data();
+    if(!data.category) data.category=categorize(data.desc);
+    return {id:d.id,...data};
+  });
   render();
 });
 
 /* EVENTS */
-const descEl=document.getElementById("desc");
-const amountEl=document.getElementById("amount");
-
-document.getElementById("addBtn").onclick=addTransaction;
-document.getElementById("exportBtn").onclick=exportToExcel;
-document.getElementById("updateBudgetBtn").onclick=async()=>{
-  const val=parseFloat(document.getElementById("budget").value.replace(/[^0-9]/g,""));
+addBtn.onclick=addTransaction;
+exportBtn.onclick=exportToExcel;
+updateBudgetBtn.onclick=async()=>{
+  const val=parseFloat(budget.value.replace(/[^0-9]/g,""));
   await setDoc(budgetDoc,{amount:val});
 };
+
+window.editTransaction=editTransaction;
+window.deleteTransaction=async(id)=>deleteDoc(doc(db,"transactions",id));
+
 </script>
 </body>
 </html>
