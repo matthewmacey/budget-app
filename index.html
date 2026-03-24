@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Budget</title>
 
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
@@ -11,7 +11,7 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont;
+  font-family: -apple-system;
   background: #eef2f7;
 }
 
@@ -19,58 +19,51 @@ body {
 .header {
   background: linear-gradient(135deg, #16a34a, #22c55e);
   color: white;
-  padding: 30px 20px 20px;
-  border-bottom-left-radius: 25px;
-  border-bottom-right-radius: 25px;
-}
-
-.header h1 {
-  margin: 0;
-  font-size: 22px;
+  padding: 25px;
+  border-radius: 0 0 25px 25px;
 }
 
 /* CONTAINER */
-.container {
-  padding: 15px;
-  margin-top: -20px;
-}
+.container { padding: 15px; margin-top: -20px; }
 
-/* CARDS */
+/* CARD */
 .card {
   background: white;
   border-radius: 18px;
   padding: 16px;
   margin-bottom: 15px;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.05);
 }
 
-/* BUDGET ROW */
+/* BUDGET ROW FIX */
 .stat {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  gap: 10px;
 }
 
 #budget {
-  width: 110px;
+  width: 100px;
   text-align: right;
-  padding: 8px;
-  border-radius: 10px;
-  border: 1px solid #ddd;
+  padding: 6px;
 }
 
-/* INPUTS */
+#updateBudgetBtn {
+  width: auto;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+/* INPUT */
 input {
   width: 100%;
   padding: 14px;
   border-radius: 12px;
   border: 1px solid #ddd;
   margin-bottom: 10px;
-  font-size: 16px;
 }
 
-/* BUTTONS */
+/* BUTTON */
 button {
   width: 100%;
   padding: 14px;
@@ -78,66 +71,40 @@ button {
   border: none;
   background: #16a34a;
   color: white;
-  font-size: 16px;
-  font-weight: 600;
-  margin-top: 5px;
+  font-weight: bold;
 }
 
-/* STATS */
-.stat-line {
-  display: flex;
-  justify-content: space-between;
-  margin: 5px 0;
+/* CATEGORY GRID */
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(2,1fr);
+  gap: 10px;
 }
 
-.subtle {
-  font-size: 13px;
-  color: #666;
+.category-card {
+  background: #f9fafb;
+  padding: 10px;
+  border-radius: 12px;
+  text-align: center;
+  font-size: 14px;
 }
-
-/* PROGRESS */
-.progress {
-  height: 10px;
-  background: #e5e7eb;
-  border-radius: 10px;
-  overflow: hidden;
-  margin-top: 10px;
-}
-
-.bar {
-  height: 100%;
-  background: #16a34a;
-}
-
-.red { background: #dc2626 !important; }
-.yellow { background: #facc15 !important; }
 
 /* TRANSACTIONS */
 .row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
   padding: 10px 0;
   border-bottom: 1px solid #eee;
 }
 
-.row strong {
-  display: block;
-}
-
-.actions button {
-  width: auto;
-  padding: 6px 10px;
-  font-size: 12px;
-  margin-left: 5px;
-}
+.subtle { color: gray; font-size: 12px; }
 </style>
 </head>
 
 <body>
 
 <div class="header">
-  <h1>Bi-Weekly Budget</h1>
+  <h2>Bi-Weekly Budget</h2>
 </div>
 
 <div class="container">
@@ -145,19 +112,23 @@ button {
 <div class="card">
   <div class="stat">
     <span>Budget</span>
+    <button id="updateBudgetBtn">Update</button>
     <input id="budget">
   </div>
-  <button id="updateBudgetBtn">Update Budget</button>
 
-  <div class="stat-line"><span>Spent</span><span id="spent">$0</span></div>
-  <div class="stat-line"><span>Remaining</span><span id="remaining">$0</span></div>
+  <div><strong>Spent:</strong> <span id="spent">$0</span></div>
+  <div><strong>Remaining:</strong> <span id="remaining">$0</span></div>
 
   <div id="cycle" class="subtle"></div>
-  <div id="pace" class="subtle"></div>
 
   <div class="progress">
     <div id="bar" class="bar"></div>
   </div>
+</div>
+
+<!-- CATEGORY BREAKDOWN -->
+<div class="card">
+  <div class="category-grid" id="categories"></div>
 </div>
 
 <div class="card">
@@ -175,177 +146,150 @@ button {
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
 import { getFirestore, collection, doc, setDoc, onSnapshot, addDoc, deleteDoc, updateDoc, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
-const firebaseConfig = {
-  apiKey: "AIzaSy...",
-  authDomain: "biweekly-budget-a5dac.firebaseapp.com",
-  projectId: "biweekly-budget-a5dac"
-};
-
-const app = initializeApp(firebaseConfig);
+const app = initializeApp({ apiKey:"AIza...", projectId:"biweekly-budget-a5dac" });
 const db = getFirestore(app);
 
 let transactions = [];
 let budgetValue = 1200;
 let cycleAnchor = null;
 
-/* --- UTIL --- */
-function formatCurrency(n){ return "$" + n.toLocaleString(); }
-function parseCurrency(s){ return parseFloat(s.replace(/[^0-9.-]/g,""))||0; }
+/* CATEGORY LOGIC */
+function categorize(desc){
+  const d = desc.toLowerCase();
+  if(d.match(/restaurant|coffee|food|pizza|chipotle|mcdonald/)) return "Food";
+  if(d.match(/gas|uber|train|flight/)) return "Travel";
+  if(d.match(/target|amazon|shop/)) return "Shopping";
+  if(d.match(/kid|school|toy/)) return "Kids";
+  if(d.match(/rent|mortgage|bill|electric/)) return "Bills";
+  if(d.match(/movie|netflix|game/)) return "Entertainment";
+  return "Other";
+}
 
-/* --- SHARED SETTINGS --- */
+/* SHARED SETTINGS */
 const budgetDoc = doc(db,"settings","currentBudget");
 const cycleDoc = doc(db,"settings","cycle");
 
-/* Budget sync */
-onSnapshot(budgetDoc, snap=>{
-  if(snap.exists()){
-    budgetValue = snap.data().amount;
-    document.getElementById("budget").value = formatCurrency(budgetValue);
+onSnapshot(budgetDoc,s=>{
+  if(s.exists()){
+    budgetValue=s.data().amount;
+    document.getElementById("budget").value="$"+budgetValue;
     render();
-  } else {
-    setDoc(budgetDoc,{amount:1200});
-  }
+  } else setDoc(budgetDoc,{amount:1200});
 });
 
-/* Cycle sync */
-onSnapshot(cycleDoc, snap=>{
-  if(snap.exists()){
-    cycleAnchor = new Date(snap.data().start);
+onSnapshot(cycleDoc,s=>{
+  if(s.exists()){
+    cycleAnchor=new Date(s.data().start);
     cycleAnchor.setHours(0,0,0,0);
     render();
-  } else {
-    // initialize default cycle
-    const start = new Date(2026,2,19);
-    setDoc(cycleDoc,{start:start.toISOString()});
-  }
+  } else setDoc(cycleDoc,{start:new Date(2026,2,19).toISOString()});
 });
 
-/* --- CYCLE LOGIC --- */
-function getCycleStart(date=new Date()){
-  const d = new Date(date);
-  d.setHours(0,0,0,0);
-
-  const diff = Math.floor((d-cycleAnchor)/(1000*60*60*24));
-  const index = Math.floor(diff/14);
-
-  const start = new Date(cycleAnchor);
-  start.setDate(cycleAnchor.getDate() + index*14);
-  return start;
+/* CYCLE */
+function getStart(){
+  const d=new Date(); d.setHours(0,0,0,0);
+  const diff=Math.floor((d-cycleAnchor)/86400000);
+  const idx=Math.floor(diff/14);
+  const s=new Date(cycleAnchor);
+  s.setDate(cycleAnchor.getDate()+idx*14);
+  return s;
 }
+function getEnd(s){ const e=new Date(s); e.setDate(s.getDate()+13); return e; }
 
-function getCycleEnd(start){
-  const end = new Date(start);
-  end.setDate(start.getDate()+13);
-  return end;
-}
-
-/* --- TRANSACTIONS --- */
+/* ADD */
 async function addTransaction(){
-  const desc = document.getElementById("desc").value.trim();
-  const amt = parseFloat(document.getElementById("amount").value);
+  const desc=descEl.value.trim();
+  const amt=parseFloat(amountEl.value);
   if(!desc||!amt) return;
 
+  const category = categorize(desc);
+
   await addDoc(collection(db,"transactions"),{
-    desc, amt, date:new Date().toISOString()
+    desc, amt, category,
+    date:new Date().toISOString()
   });
 
-  desc.value="";
-  amount.value="";
+  descEl.value=""; amountEl.value="";
 }
 
-async function deleteTransaction(id){
-  await deleteDoc(doc(db,"transactions",id));
-}
-
-async function editTransaction(id,desc,amt){
-  const nd = prompt("Edit description:",desc);
-  const na = parseFloat(prompt("Edit amount:",amt));
-  if(!nd||!na) return;
-
-  await updateDoc(doc(db,"transactions",id),{desc:nd,amt:na});
-}
-
-/* --- RENDER --- */
+/* RENDER */
 function render(){
   if(!cycleAnchor) return;
 
-  const start = getCycleStart();
-  const end = getCycleEnd(start);
-  const now = new Date();
+  const start=getStart();
+  const end=getEnd(start);
 
-  const filtered = transactions.filter(t=>{
+  const filtered=transactions.filter(t=>{
     const d=new Date(t.date);
     return d>=start && d<=end;
   });
 
-  const spent = filtered.reduce((a,b)=>a+b.amt,0);
-  const remaining = budgetValue - spent;
+  const spent=filtered.reduce((a,b)=>a+b.amt,0);
+  document.getElementById("spent").innerText="$"+spent;
+  document.getElementById("remaining").innerText="$"+(budgetValue-spent);
 
-  document.getElementById("spent").innerText = formatCurrency(spent);
-  document.getElementById("remaining").innerText = formatCurrency(remaining);
+  document.getElementById("cycle").innerText=
+    `${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
 
-  const days = Math.min(Math.floor((now-start)/(1000*60*60*24))+1,14);
-  const timePct = (days/14)*100;
-  const spendPct = (spent/budgetValue)*100;
+  /* CATEGORY TOTALS */
+  const totals={};
+  filtered.forEach(t=>{
+    totals[t.category]=(totals[t.category]||0)+t.amt;
+  });
 
-  document.getElementById("pace").innerText =
-    `Used ${timePct.toFixed(0)}% of time, ${spendPct.toFixed(0)}% of budget`;
+  const catDiv=document.getElementById("categories");
+  catDiv.innerHTML="";
+  Object.keys(totals).forEach(c=>{
+    const el=document.createElement("div");
+    el.className="category-card";
+    el.innerHTML=`<strong>${c}</strong><br>$${totals[c]}`;
+    catDiv.appendChild(el);
+  });
 
-  const bar = document.getElementById("bar");
-  bar.style.width = spendPct+"%";
-  bar.className="bar";
-  if(spendPct-timePct>15) bar.classList.add("red");
-  else if(spendPct-timePct>5) bar.classList.add("yellow");
-
-  document.getElementById("cycle").innerText =
-    `Cycle: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
-
-  const list = document.getElementById("list");
+  /* LIST */
+  const list=document.getElementById("list");
   list.innerHTML="";
-
-  filtered.slice().reverse().forEach(t=>{
+  filtered.reverse().forEach(t=>{
     const row=document.createElement("div");
     row.className="row";
-
     row.innerHTML=`
       <div>
         <strong>${t.desc}</strong>
-        <span class="subtle">${formatCurrency(t.amt)}</span>
+        <div class="subtle">${t.category}</div>
       </div>
-      <div class="actions">
-        <button onclick="editTransaction('${t.id}','${t.desc}',${t.amt})">Edit</button>
-        <button onclick="deleteTransaction('${t.id}')">Delete</button>
-      </div>
+      <div>$${t.amt}</div>
     `;
     list.appendChild(row);
   });
 }
 
-/* --- LISTENER --- */
-const q = query(collection(db,"transactions"),orderBy("date","asc"));
-onSnapshot(q,snap=>{
-  transactions = snap.docs.map(d=>({id:d.id,...d.data()}));
+/* EXPORT */
+async function exportToExcel(){
+  const docs=await getDocs(collection(db,"transactions"));
+  const data=docs.docs.map(d=>d.data());
+  const ws=XLSX.utils.json_to_sheet(data);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Budget");
+  XLSX.writeFile(wb,"budget.xlsx");
+}
+
+/* LISTENER */
+const q=query(collection(db,"transactions"),orderBy("date","asc"));
+onSnapshot(q,s=>{
+  transactions=s.docs.map(d=>d.data());
   render();
 });
 
-/* --- EVENTS --- */
-window.editTransaction = editTransaction;
-window.deleteTransaction = deleteTransaction;
+/* EVENTS */
+const descEl=document.getElementById("desc");
+const amountEl=document.getElementById("amount");
 
-document.getElementById("addBtn").onclick = addTransaction;
-document.getElementById("updateBudgetBtn").onclick = async ()=>{
-  const val = parseCurrency(document.getElementById("budget").value);
+document.getElementById("addBtn").onclick=addTransaction;
+document.getElementById("exportBtn").onclick=exportToExcel;
+document.getElementById("updateBudgetBtn").onclick=async()=>{
+  const val=parseFloat(document.getElementById("budget").value.replace(/[^0-9]/g,""));
   await setDoc(budgetDoc,{amount:val});
 };
-document.getElementById("exportBtn").onclick = async ()=>{
-  const docs = await getDocs(collection(db,"transactions"));
-  const data = docs.docs.map(d=>d.data());
-  const ws = XLSX.utils.json_to_sheet(data);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"Budget");
-  XLSX.writeFile(wb,"budget.xlsx");
-};
-
 </script>
 </body>
 </html>
