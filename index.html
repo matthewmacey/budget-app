@@ -2,23 +2,28 @@
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Budget App v2</title>
+<title>Budget App</title>
 
 <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
 body{margin:0;font-family:-apple-system;background:#eef7ee}
-.header{background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;padding:20px;text-align:center}
+.header{background:#16a34a;color:#fff;padding:20px;text-align:center}
 .container{padding:15px}
-.card{background:#fff;border-radius:16px;padding:15px;margin-bottom:12px;box-shadow:0 4px 12px rgba(0,0,0,.05)}
+.card{background:#fff;border-radius:16px;padding:15px;margin-bottom:12px}
 input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #ddd;margin-bottom:8px}
 button{background:#16a34a;color:#fff;border:none;padding:8px;border-radius:8px;margin-right:5px}
 .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee}
 .subtle{font-size:12px;color:gray}
-.bar{height:10px;background:#34c759;border-radius:8px;width:0%}
-.bar.yellow{background:#ffcc00}
-.bar.red{background:#ff3b30}
+
+#modal{
+display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+background:rgba(0,0,0,.4);justify-content:center;align-items:center;
+}
+.modal-box{
+background:#fff;padding:20px;border-radius:12px;width:90%;max-width:400px
+}
 </style>
 </head>
 
@@ -35,10 +40,6 @@ button{background:#16a34a;color:#fff;border:none;padding:8px;border-radius:8px;m
   <div>Spent: <span id="spent">$0</span></div>
   <div>Remaining: <span id="remaining">$0</span></div>
 
-  <div class="bar" id="bar"></div>
-
-  <div id="pace" class="subtle"></div>
-  <div id="forecast" class="subtle"></div>
   <div id="insight" class="subtle"></div>
 </div>
 
@@ -56,18 +57,33 @@ button{background:#16a34a;color:#fff;border:none;padding:8px;border-radius:8px;m
   </select>
 
   <button id="addBtn">Add</button>
-  <button id="exportBtn">Export</button>
 </div>
 
 <div class="card" id="list"></div>
 
 </div>
 
+<!-- EDIT MODAL -->
+<div id="modal">
+  <div class="modal-box">
+    <h3>Edit Transaction</h3>
+    <input id="editDesc">
+    <input id="editAmt" type="number">
+    <select id="editCat">
+      <option>Food</option><option>Travel</option><option>Shopping</option>
+      <option>Kids</option><option>Bills</option><option>Entertainment</option>
+      <option>Alcohol</option><option>Other</option>
+    </select>
+    <button onclick="saveEdit()">Save</button>
+    <button onclick="closeModal()">Cancel</button>
+  </div>
+</div>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
 import {
-  getFirestore, collection, addDoc, setDoc, doc,
-  onSnapshot, deleteDoc, updateDoc, getDocs
+  getFirestore, collection, addDoc, doc,
+  onSnapshot, deleteDoc, updateDoc, setDoc
 } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
 const app = initializeApp({
@@ -78,7 +94,7 @@ const app = initializeApp({
 const db = getFirestore(app);
 
 let transactions=[];
-let chart;
+let editId=null;
 
 // ---------- AI ----------
 function catAI(d){
@@ -87,25 +103,12 @@ function catAI(d){
   if(/uber|gas/.test(d)) return "Travel";
   if(/amazon|target/.test(d)) return "Shopping";
   if(/beer|wine|vodka/.test(d)) return "Alcohol";
-  if(/netflix|movie/.test(d)) return "Entertainment";
   return "Other";
 }
 
-// ---------- LOCAL BACKUP ----------
-function backup(data){
-  localStorage.setItem("budget_backup",JSON.stringify(data));
-}
-function loadBackup(){
-  return JSON.parse(localStorage.getItem("budget_backup")||"[]");
-}
-
-// ---------- LOAD DATA ----------
+// ---------- LOAD ----------
 onSnapshot(collection(db,"transactions"),snap=>{
   transactions=snap.docs.map(d=>({id:d.id,...d.data()}));
-  backup(transactions);
-  render();
-},()=>{
-  transactions=loadBackup();
   render();
 });
 
@@ -114,15 +117,17 @@ const budgetDoc=doc(db,"settings","budget");
 
 onSnapshot(budgetDoc,s=>{
   if(s.exists()){
-    budget.value="$"+s.data().amount;
-  }else{
+    if(document.activeElement !== budget){
+      budget.value="$"+s.data().amount;
+    }
+  } else {
     setDoc(budgetDoc,{amount:1200});
   }
 });
 
 saveBudget.onclick=async()=>{
   const val=parseFloat(budget.value.replace(/[^0-9.]/g,""));
-  if(!val) return alert("Enter valid budget");
+  if(!val) return alert("Enter valid number");
   await setDoc(budgetDoc,{amount:val});
 };
 
@@ -141,38 +146,34 @@ addBtn.onclick=async()=>{
   desc.value=""; amount.value="";
 };
 
+// ---------- EDIT ----------
+window.openEdit=id=>{
+  const t=transactions.find(x=>x.id===id);
+  editId=id;
+  editDesc.value=t.desc;
+  editAmt.value=t.amt;
+  editCat.value=t.category||catAI(t.desc);
+  modal.style.display="flex";
+};
+
+window.closeModal=()=>modal.style.display="none";
+
+window.saveEdit=async()=>{
+  await updateDoc(doc(db,"transactions",editId),{
+    desc:editDesc.value,
+    amt:parseFloat(editAmt.value),
+    category:editCat.value
+  });
+  modal.style.display="none";
+};
+
 // ---------- DELETE ----------
 window.del=id=>deleteDoc(doc(db,"transactions",id));
 
 // ---------- RENDER ----------
 function render(){
-
-  const spentEl=document.getElementById("spent");
-
-  const budgetVal=parseFloat(budget.value.replace(/[^0-9.]/g,""))||0;
   const spent=transactions.reduce((a,b)=>a+b.amt,0);
-
   spentEl.innerText="$"+spent.toFixed(0);
-  remaining.innerText="$"+(budgetVal-spent).toFixed(0);
-
-  const pct=(spent/budgetVal)*100 || 0;
-
-  bar.style.width=Math.min(pct,100)+"%";
-  bar.className="bar";
-  if(pct>90) bar.classList.add("red");
-  else if(pct>70) bar.classList.add("yellow");
-
-  // Forecast
-  const avgDaily=spent/Math.max(transactions.length,1);
-  const forecastVal=avgDaily*14;
-  forecast.innerText="Forecast: $"+forecastVal.toFixed(0);
-
-  // AI Insights
-  let insight="";
-
-  if(pct>100) insight="⚠️ Over budget";
-  else if(pct>80) insight="⚠️ Approaching limit";
-  else insight="👍 On track";
 
   const totals={};
   transactions.forEach(t=>{
@@ -180,17 +181,10 @@ function render(){
     totals[c]=(totals[c]||0)+t.amt;
   });
 
-  const top=Object.entries(totals).sort((a,b)=>b[1]-a[1])[0];
-  if(top) insight+=" • Top: "+top[0];
-
-  if(totals["Alcohol"]>200) insight+=" • 🍺 High alcohol spend";
-
-  document.getElementById("insight").innerText=insight;
-
   // Chart
-  if(chart) chart.destroy();
+  if(window.chart) window.chart.destroy();
   if(Object.keys(totals).length){
-    chart=new Chart(document.getElementById("chart"),{
+    window.chart=new Chart(document.getElementById("chart"),{
       type:"pie",
       data:{
         labels:Object.keys(totals),
@@ -210,22 +204,14 @@ function render(){
           ${t.desc} - $${t.amt}
           <div class="subtle">${cat}</div>
         </div>
-        <button onclick="del('${t.id}')">X</button>
+        <div>
+          <button onclick="openEdit('${t.id}')">Edit</button>
+          <button onclick="del('${t.id}')">X</button>
+        </div>
       </div>
     `;
   });
 }
-
-// ---------- EXPORT ----------
-exportBtn.onclick=async()=>{
-  const snap=await getDocs(collection(db,"transactions"));
-  const data=snap.docs.map(d=>d.data());
-  const ws=XLSX.utils.json_to_sheet(data);
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"Budget");
-  XLSX.writeFile(wb,"budget.xlsx");
-};
-
 </script>
 </body>
 </html>
