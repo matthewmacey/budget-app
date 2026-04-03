@@ -48,6 +48,8 @@ button{
 
 .progress{height:12px;background:#e5e5ea;border-radius:10px;overflow:hidden;margin-top:10px}
 .bar{height:100%;background:#34c759;width:0%}
+.bar.yellow{background:#ffcc00}
+.bar.red{background:#ff3b30}
 
 .amt{color:#16a34a;font-weight:bold;margin-left:8px}
 
@@ -135,7 +137,7 @@ const app = initializeApp({
 });
 const db = getFirestore(app);
 
-// SAFE DOM REFERENCES
+// DOM
 const budgetInput = document.getElementById("budget");
 const spentEl = document.getElementById("spent");
 const remainingEl = document.getElementById("remaining");
@@ -148,6 +150,11 @@ const categoryInput = document.getElementById("category");
 const updateBudgetBtn = document.getElementById("updateBudgetBtn");
 const addBtn = document.getElementById("addBtn");
 
+const bar = document.getElementById("bar");
+const pace = document.getElementById("pace");
+const cycle = document.getElementById("cycle");
+const insight = document.getElementById("insight");
+
 const modal = document.getElementById("modal");
 const editDesc = document.getElementById("editDesc");
 const editAmt = document.getElementById("editAmt");
@@ -157,6 +164,7 @@ const closeModalBtn = document.getElementById("closeModalBtn");
 
 let transactions = [];
 let editId = null;
+let cycleAnchor = new Date(2026, 2, 19);
 
 // AI categorize
 function catAI(d){
@@ -168,7 +176,7 @@ function catAI(d){
   return "Other";
 }
 
-// Budget sync
+// Budget
 const budgetDoc = doc(db,"settings","budget");
 
 onSnapshot(budgetDoc,s=>{
@@ -181,7 +189,6 @@ onSnapshot(budgetDoc,s=>{
   }
 });
 
-// FIXED BUTTON
 updateBudgetBtn.onclick = async ()=>{
   const val = parseFloat(budgetInput.value.replace(/[^0-9.]/g,""));
   if(!val) return alert("Enter valid number");
@@ -194,7 +201,7 @@ onSnapshot(query(collection(db,"transactions"),orderBy("date","asc")),snap=>{
   render();
 });
 
-// ADD FIXED
+// Add
 addBtn.onclick = async ()=>{
   const d = descInput.value;
   const a = parseFloat(amountInput.value);
@@ -210,7 +217,7 @@ addBtn.onclick = async ()=>{
   amountInput.value="";
 };
 
-// EDIT
+// Edit
 function openEdit(id){
   const t = transactions.find(x=>x.id===id);
   editId=id;
@@ -231,22 +238,82 @@ saveEditBtn.onclick = async ()=>{
 
 closeModalBtn.onclick=()=>modal.style.display="none";
 
-// DELETE
+// Delete
 function del(id){
   deleteDoc(doc(db,"transactions",id));
 }
 
-// RENDER
+// Render
 function render(){
-  const spent = transactions.reduce((a,b)=>a+(b.amt||0),0);
-  const budgetVal = parseFloat(budgetInput.value.replace(/[^0-9.]/g,""))||0;
 
-  spentEl.innerText="$"+spent.toFixed(0);
-  remainingEl.innerText="$"+(budgetVal-spent).toFixed(0);
+  const now = new Date(); 
+  now.setHours(0,0,0,0);
+
+  const diff = Math.floor((now - cycleAnchor)/86400000);
+  const idx = Math.floor(diff/14);
+
+  const start = new Date(cycleAnchor); 
+  start.setDate(cycleAnchor.getDate() + idx*14);
+
+  const end = new Date(start); 
+  end.setDate(start.getDate() + 13);
+
+  cycle.innerText = `Cycle: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+
+  const budgetVal = parseFloat(budgetInput.value.replace(/[^0-9.]/g,"")) || 0;
+
+  const filtered = transactions.filter(t=>{
+    const d = new Date(t.date);
+    return d >= start && d <= end;
+  });
+
+  const spent = filtered.reduce((a,b)=>a+(b.amt||0),0);
+
+  spentEl.innerText = "$" + spent.toFixed(0);
+  remainingEl.innerText = "$" + (budgetVal - spent).toFixed(0);
+
+  const timePct = ((now - start)/86400000)/14 * 100;
+  const spendPct = (spent / budgetVal) * 100 || 0;
+
+  pace.innerText = `${timePct.toFixed(0)}% time • ${spendPct.toFixed(0)}% budget`;
+
+  bar.style.width = Math.min(spendPct,100) + "%";
+  bar.className = "bar";
+  if(spendPct > 90) bar.classList.add("red");
+  else if(spendPct > 70) bar.classList.add("yellow");
+
+  const totals = {};
+  filtered.forEach(t=>{
+    const c = t.category || catAI(t.desc);
+    totals[c] = (totals[c] || 0) + t.amt;
+  });
+
+  let text = "";
+  if(spendPct > timePct + 10) text = "⚠️ Overspending vs pace";
+  else if(spendPct < timePct - 10) text = "👍 Under pace";
+  else text = "👌 On track";
+
+  const top = Object.entries(totals).sort((a,b)=>b[1]-a[1])[0];
+  if(top) text += ` • Top: ${top[0]}`;
+
+  if(totals["Alcohol"] > 200) text += " • 🍺 Alcohol high";
+
+  insight.innerText = text;
+
+  if(window.chart) window.chart.destroy();
+  if(Object.keys(totals).length){
+    window.chart = new Chart(document.getElementById("chart"),{
+      type:"pie",
+      data:{
+        labels:Object.keys(totals),
+        datasets:[{data:Object.values(totals)}]
+      }
+    });
+  }
 
   listEl.innerHTML="";
 
-  transactions.slice().reverse().forEach(t=>{
+  filtered.slice().reverse().forEach(t=>{
     const cat = t.category || catAI(t.desc);
 
     const div = document.createElement("div");
