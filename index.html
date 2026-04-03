@@ -29,7 +29,7 @@ background:#fff;padding:20px;border-radius:12px;width:90%;max-width:400px
 
 <body>
 
-<div class="header"><h2>Budget v2</h2></div>
+<div class="header"><h2>Budget App</h2></div>
 
 <div class="container">
 
@@ -63,10 +63,10 @@ background:#fff;padding:20px;border-radius:12px;width:90%;max-width:400px
 
 </div>
 
-<!-- EDIT MODAL -->
+<!-- MODAL -->
 <div id="modal">
   <div class="modal-box">
-    <h3>Edit Transaction</h3>
+    <h3>Edit</h3>
     <input id="editDesc">
     <input id="editAmt" type="number">
     <select id="editCat">
@@ -74,8 +74,8 @@ background:#fff;padding:20px;border-radius:12px;width:90%;max-width:400px
       <option>Kids</option><option>Bills</option><option>Entertainment</option>
       <option>Alcohol</option><option>Other</option>
     </select>
-    <button onclick="saveEdit()">Save</button>
-    <button onclick="closeModal()">Cancel</button>
+    <button id="saveEditBtn">Save</button>
+    <button id="closeModalBtn">Cancel</button>
   </div>
 </div>
 
@@ -86,6 +86,7 @@ import {
   onSnapshot, deleteDoc, updateDoc, setDoc
 } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
+// ---------- INIT ----------
 const app = initializeApp({
   apiKey:"AIzaSyA1KSyrh5UY3omenJMK2IBCH-fTvVCeIc4",
   authDomain:"biweekly-budget-a5dac.firebaseapp.com",
@@ -93,12 +94,33 @@ const app = initializeApp({
 });
 const db = getFirestore(app);
 
-let transactions=[];
-let editId=null;
+// ---------- DOM ----------
+const budgetInput = document.getElementById("budget");
+const saveBudgetBtn = document.getElementById("saveBudget");
+const spentEl = document.getElementById("spent");
+const remainingEl = document.getElementById("remaining");
+const insightEl = document.getElementById("insight");
+
+const descInput = document.getElementById("desc");
+const amountInput = document.getElementById("amount");
+const categoryInput = document.getElementById("category");
+const addBtn = document.getElementById("addBtn");
+const listEl = document.getElementById("list");
+
+const modal = document.getElementById("modal");
+const editDesc = document.getElementById("editDesc");
+const editAmt = document.getElementById("editAmt");
+const editCat = document.getElementById("editCat");
+const saveEditBtn = document.getElementById("saveEditBtn");
+const closeModalBtn = document.getElementById("closeModalBtn");
+
+let transactions = [];
+let editId = null;
+let chart;
 
 // ---------- AI ----------
 function catAI(d){
-  d=d.toLowerCase();
+  d = (d || "").toLowerCase();
   if(/restaurant|coffee|pizza/.test(d)) return "Food";
   if(/uber|gas/.test(d)) return "Travel";
   if(/amazon|target/.test(d)) return "Shopping";
@@ -108,83 +130,104 @@ function catAI(d){
 
 // ---------- LOAD ----------
 onSnapshot(collection(db,"transactions"),snap=>{
-  transactions=snap.docs.map(d=>({id:d.id,...d.data()}));
+  transactions = snap.docs.map(d=>({id:d.id,...d.data()}));
   render();
 });
 
 // ---------- BUDGET ----------
-const budgetDoc=doc(db,"settings","budget");
+const budgetDoc = doc(db,"settings","budget");
 
 onSnapshot(budgetDoc,s=>{
   if(s.exists()){
-    if(document.activeElement !== budget){
-      budget.value="$"+s.data().amount;
+    if(document.activeElement !== budgetInput){
+      budgetInput.value = "$" + s.data().amount;
     }
   } else {
     setDoc(budgetDoc,{amount:1200});
   }
 });
 
-saveBudget.onclick=async()=>{
-  const val=parseFloat(budget.value.replace(/[^0-9.]/g,""));
+saveBudgetBtn.onclick = async ()=>{
+  const val = parseFloat(budgetInput.value.replace(/[^0-9.]/g,""));
   if(!val) return alert("Enter valid number");
   await setDoc(budgetDoc,{amount:val});
 };
 
 // ---------- ADD ----------
-addBtn.onclick=async()=>{
-  const d=desc.value;
-  const a=parseFloat(amount.value);
+addBtn.onclick = async ()=>{
+  const d = descInput.value;
+  const a = parseFloat(amountInput.value);
   if(!d || !a) return;
 
-  const c=category.value||catAI(d);
+  const c = categoryInput.value || catAI(d);
 
   await addDoc(collection(db,"transactions"),{
-    desc:d,amt:a,category:c,date:new Date().toISOString()
+    desc:d, amt:a, category:c, date:new Date().toISOString()
   });
 
-  desc.value=""; amount.value="";
+  descInput.value = "";
+  amountInput.value = "";
 };
 
 // ---------- EDIT ----------
-window.openEdit=id=>{
-  const t=transactions.find(x=>x.id===id);
-  editId=id;
-  editDesc.value=t.desc;
-  editAmt.value=t.amt;
-  editCat.value=t.category||catAI(t.desc);
-  modal.style.display="flex";
-};
+function openEdit(id){
+  const t = transactions.find(x=>x.id===id);
+  if(!t) return;
 
-window.closeModal=()=>modal.style.display="none";
+  editId = id;
+  editDesc.value = t.desc;
+  editAmt.value = t.amt;
+  editCat.value = t.category || catAI(t.desc);
 
-window.saveEdit=async()=>{
+  modal.style.display = "flex";
+}
+
+saveEditBtn.onclick = async ()=>{
+  if(!editId) return;
+
   await updateDoc(doc(db,"transactions",editId),{
     desc:editDesc.value,
     amt:parseFloat(editAmt.value),
     category:editCat.value
   });
-  modal.style.display="none";
+
+  modal.style.display = "none";
 };
 
+closeModalBtn.onclick = ()=> modal.style.display = "none";
+
 // ---------- DELETE ----------
-window.del=id=>deleteDoc(doc(db,"transactions",id));
+function del(id){
+  deleteDoc(doc(db,"transactions",id));
+}
 
 // ---------- RENDER ----------
 function render(){
-  const spent=transactions.reduce((a,b)=>a+b.amt,0);
-  spentEl.innerText="$"+spent.toFixed(0);
 
-  const totals={};
-  transactions.forEach(t=>{
-    const c=t.category||catAI(t.desc);
-    totals[c]=(totals[c]||0)+t.amt;
-  });
+  const spent = transactions.reduce((a,b)=>a+(b.amt||0),0);
+  const budgetVal = parseFloat(budgetInput.value.replace(/[^0-9.]/g,"")) || 0;
+
+  spentEl.innerText = "$" + spent.toFixed(0);
+  remainingEl.innerText = "$" + (budgetVal - spent).toFixed(0);
+
+  // Insights
+  let text = "";
+  if(spent > budgetVal) text = "⚠️ Over budget";
+  else text = "👍 On track";
+
+  insightEl.innerText = text;
 
   // Chart
-  if(window.chart) window.chart.destroy();
+  const totals = {};
+  transactions.forEach(t=>{
+    const c = t.category || catAI(t.desc);
+    totals[c] = (totals[c] || 0) + t.amt;
+  });
+
+  if(chart) chart.destroy();
+
   if(Object.keys(totals).length){
-    window.chart=new Chart(document.getElementById("chart"),{
+    chart = new Chart(document.getElementById("chart"),{
       type:"pie",
       data:{
         labels:Object.keys(totals),
@@ -194,22 +237,32 @@ function render(){
   }
 
   // List
-  list.innerHTML="";
+  listEl.innerHTML = "";
   transactions.slice().reverse().forEach(t=>{
-    const cat=t.category||catAI(t.desc);
+    const cat = t.category || catAI(t.desc);
 
-    list.innerHTML+=`
-      <div class="row">
-        <div>
-          ${t.desc} - $${t.amt}
-          <div class="subtle">${cat}</div>
-        </div>
-        <div>
-          <button onclick="openEdit('${t.id}')">Edit</button>
-          <button onclick="del('${t.id}')">X</button>
-        </div>
+    const div = document.createElement("div");
+    div.className = "row";
+    div.innerHTML = `
+      <div>
+        ${t.desc} - $${t.amt}
+        <div class="subtle">${cat}</div>
+      </div>
+      <div>
+        <button data-id="${t.id}" class="editBtn">Edit</button>
+        <button data-id="${t.id}" class="delBtn">X</button>
       </div>
     `;
+    listEl.appendChild(div);
+  });
+
+  // Attach events AFTER render
+  document.querySelectorAll(".editBtn").forEach(btn=>{
+    btn.onclick = ()=> openEdit(btn.dataset.id);
+  });
+
+  document.querySelectorAll(".delBtn").forEach(btn=>{
+    btn.onclick = ()=> del(btn.dataset.id);
   });
 }
 </script>
