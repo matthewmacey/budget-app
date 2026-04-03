@@ -8,44 +8,85 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
+*{box-sizing:border-box}
 body{margin:0;font-family:-apple-system;background:#eef7ee}
-.header{background:#16a34a;color:#fff;padding:20px;text-align:center}
-.container{padding:15px}
-.card{background:#fff;border-radius:16px;padding:15px;margin-bottom:12px}
-input,select{width:100%;padding:10px;border-radius:10px;border:1px solid #ddd;margin-bottom:8px}
-button{background:#16a34a;color:#fff;border:none;padding:8px;border-radius:8px;margin-right:5px}
-.row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #eee}
+
+.header{
+  background:linear-gradient(135deg,#16a34a,#22c55e);
+  color:#fff;padding:25px;text-align:center;border-radius:0 0 25px 25px
+}
+
+.container{padding:15px;margin-top:-20px}
+
+.card{
+  background:#fff;border-radius:18px;padding:16px;margin-bottom:15px;
+  box-shadow:0 6px 18px rgba(0,0,0,.05)
+}
+
+.sticky{position:sticky;bottom:10px}
+
+.stat{display:flex;align-items:center;gap:8px}
+#budget{width:90px;text-align:right}
+
+input,select{
+  width:100%;padding:12px;border-radius:12px;border:1px solid #ddd;margin-bottom:10px
+}
+
+button{
+  border:none;border-radius:10px;padding:6px 10px;cursor:pointer;
+  background:#16a34a;color:#fff;font-weight:bold
+}
+
+.row{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:10px 0;border-bottom:1px solid #eee
+}
+
+.actions{display:flex;gap:5px}
+
 .subtle{font-size:12px;color:gray}
 
+.progress{height:12px;background:#e5e5ea;border-radius:10px;overflow:hidden;margin-top:10px}
+.bar{height:100%;background:#34c759;width:0%}
+
+.amt{color:#16a34a;font-weight:bold;margin-left:8px}
+
+/* Modal */
 #modal{
-display:none;position:fixed;top:0;left:0;width:100%;height:100%;
-background:rgba(0,0,0,.4);justify-content:center;align-items:center;
+  display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,.4);justify-content:center;align-items:center;
 }
 .modal-box{
-background:#fff;padding:20px;border-radius:12px;width:90%;max-width:400px
+  background:#fff;padding:20px;border-radius:15px;width:90%;max-width:400px
 }
 </style>
 </head>
 
 <body>
 
-<div class="header"><h2>Budget App</h2></div>
+<div class="header"><h2>Bi-Weekly Budget</h2></div>
 
 <div class="container">
 
 <div class="card">
-  Budget <input id="budget">
-  <button id="saveBudget">Save Budget</button>
+  <div class="stat">
+    <span>Budget</span>
+    <button id="updateBudgetBtn">Update</button>
+    <input id="budget">
+  </div>
 
-  <div>Spent: <span id="spent">$0</span></div>
-  <div>Remaining: <span id="remaining">$0</span></div>
+  <div><strong>Spent:</strong> <span id="spent">$0</span></div>
+  <div><strong>Remaining:</strong> <span id="remaining">$0</span></div>
 
+  <div class="progress"><div id="bar" class="bar"></div></div>
+  <div id="pace" class="subtle"></div>
+  <div id="cycle" class="subtle"></div>
   <div id="insight" class="subtle"></div>
 </div>
 
 <div class="card"><canvas id="chart"></canvas></div>
 
-<div class="card">
+<div class="card sticky">
   <input id="desc" placeholder="What did you buy?">
   <input id="amount" type="number" placeholder="Amount">
 
@@ -56,17 +97,18 @@ background:#fff;padding:20px;border-radius:12px;width:90%;max-width:400px
     <option>Alcohol</option><option>Other</option>
   </select>
 
-  <button id="addBtn">Add</button>
+  <button id="addBtn">Add Purchase</button>
+  <button id="exportBtn">Export</button>
 </div>
 
 <div class="card" id="list"></div>
 
 </div>
 
-<!-- MODAL -->
+<!-- EDIT MODAL -->
 <div id="modal">
   <div class="modal-box">
-    <h3>Edit</h3>
+    <h3>Edit Transaction</h3>
     <input id="editDesc">
     <input id="editAmt" type="number">
     <select id="editCat">
@@ -82,11 +124,10 @@ background:#fff;padding:20px;border-radius:12px;width:90%;max-width:400px
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
 import {
-  getFirestore, collection, addDoc, doc,
-  onSnapshot, deleteDoc, updateDoc, setDoc
+  getFirestore, collection, doc, addDoc, setDoc, updateDoc,
+  deleteDoc, onSnapshot, query, orderBy, getDocs
 } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
-// ---------- INIT ----------
 const app = initializeApp({
   apiKey:"AIzaSyA1KSyrh5UY3omenJMK2IBCH-fTvVCeIc4",
   authDomain:"biweekly-budget-a5dac.firebaseapp.com",
@@ -94,18 +135,18 @@ const app = initializeApp({
 });
 const db = getFirestore(app);
 
-// ---------- DOM ----------
+// SAFE DOM REFERENCES
 const budgetInput = document.getElementById("budget");
-const saveBudgetBtn = document.getElementById("saveBudget");
 const spentEl = document.getElementById("spent");
 const remainingEl = document.getElementById("remaining");
-const insightEl = document.getElementById("insight");
+const listEl = document.getElementById("list");
 
 const descInput = document.getElementById("desc");
 const amountInput = document.getElementById("amount");
 const categoryInput = document.getElementById("category");
+
+const updateBudgetBtn = document.getElementById("updateBudgetBtn");
 const addBtn = document.getElementById("addBtn");
-const listEl = document.getElementById("list");
 
 const modal = document.getElementById("modal");
 const editDesc = document.getElementById("editDesc");
@@ -116,11 +157,10 @@ const closeModalBtn = document.getElementById("closeModalBtn");
 
 let transactions = [];
 let editId = null;
-let chart;
 
-// ---------- AI ----------
+// AI categorize
 function catAI(d){
-  d = (d || "").toLowerCase();
+  d=(d||"").toLowerCase();
   if(/restaurant|coffee|pizza/.test(d)) return "Food";
   if(/uber|gas/.test(d)) return "Travel";
   if(/amazon|target/.test(d)) return "Shopping";
@@ -128,36 +168,37 @@ function catAI(d){
   return "Other";
 }
 
-// ---------- LOAD ----------
-onSnapshot(collection(db,"transactions"),snap=>{
-  transactions = snap.docs.map(d=>({id:d.id,...d.data()}));
-  render();
-});
-
-// ---------- BUDGET ----------
+// Budget sync
 const budgetDoc = doc(db,"settings","budget");
 
 onSnapshot(budgetDoc,s=>{
   if(s.exists()){
     if(document.activeElement !== budgetInput){
-      budgetInput.value = "$" + s.data().amount;
+      budgetInput.value="$"+s.data().amount;
     }
   } else {
     setDoc(budgetDoc,{amount:1200});
   }
 });
 
-saveBudgetBtn.onclick = async ()=>{
+// FIXED BUTTON
+updateBudgetBtn.onclick = async ()=>{
   const val = parseFloat(budgetInput.value.replace(/[^0-9.]/g,""));
   if(!val) return alert("Enter valid number");
   await setDoc(budgetDoc,{amount:val});
 };
 
-// ---------- ADD ----------
+// Transactions
+onSnapshot(query(collection(db,"transactions"),orderBy("date","asc")),snap=>{
+  transactions = snap.docs.map(d=>({id:d.id,...d.data()}));
+  render();
+});
+
+// ADD FIXED
 addBtn.onclick = async ()=>{
   const d = descInput.value;
   const a = parseFloat(amountInput.value);
-  if(!d || !a) return;
+  if(!d || !a) return alert("Enter valid input");
 
   const c = categoryInput.value || catAI(d);
 
@@ -165,104 +206,68 @@ addBtn.onclick = async ()=>{
     desc:d, amt:a, category:c, date:new Date().toISOString()
   });
 
-  descInput.value = "";
-  amountInput.value = "";
+  descInput.value="";
+  amountInput.value="";
 };
 
-// ---------- EDIT ----------
+// EDIT
 function openEdit(id){
   const t = transactions.find(x=>x.id===id);
-  if(!t) return;
-
-  editId = id;
-  editDesc.value = t.desc;
-  editAmt.value = t.amt;
-  editCat.value = t.category || catAI(t.desc);
-
-  modal.style.display = "flex";
+  editId=id;
+  editDesc.value=t.desc;
+  editAmt.value=t.amt;
+  editCat.value=t.category||catAI(t.desc);
+  modal.style.display="flex";
 }
 
 saveEditBtn.onclick = async ()=>{
-  if(!editId) return;
-
   await updateDoc(doc(db,"transactions",editId),{
     desc:editDesc.value,
     amt:parseFloat(editAmt.value),
     category:editCat.value
   });
-
-  modal.style.display = "none";
+  modal.style.display="none";
 };
 
-closeModalBtn.onclick = ()=> modal.style.display = "none";
+closeModalBtn.onclick=()=>modal.style.display="none";
 
-// ---------- DELETE ----------
+// DELETE
 function del(id){
   deleteDoc(doc(db,"transactions",id));
 }
 
-// ---------- RENDER ----------
+// RENDER
 function render(){
-
   const spent = transactions.reduce((a,b)=>a+(b.amt||0),0);
-  const budgetVal = parseFloat(budgetInput.value.replace(/[^0-9.]/g,"")) || 0;
+  const budgetVal = parseFloat(budgetInput.value.replace(/[^0-9.]/g,""))||0;
 
-  spentEl.innerText = "$" + spent.toFixed(0);
-  remainingEl.innerText = "$" + (budgetVal - spent).toFixed(0);
+  spentEl.innerText="$"+spent.toFixed(0);
+  remainingEl.innerText="$"+(budgetVal-spent).toFixed(0);
 
-  // Insights
-  let text = "";
-  if(spent > budgetVal) text = "⚠️ Over budget";
-  else text = "👍 On track";
+  listEl.innerHTML="";
 
-  insightEl.innerText = text;
-
-  // Chart
-  const totals = {};
-  transactions.forEach(t=>{
-    const c = t.category || catAI(t.desc);
-    totals[c] = (totals[c] || 0) + t.amt;
-  });
-
-  if(chart) chart.destroy();
-
-  if(Object.keys(totals).length){
-    chart = new Chart(document.getElementById("chart"),{
-      type:"pie",
-      data:{
-        labels:Object.keys(totals),
-        datasets:[{data:Object.values(totals)}]
-      }
-    });
-  }
-
-  // List
-  listEl.innerHTML = "";
   transactions.slice().reverse().forEach(t=>{
     const cat = t.category || catAI(t.desc);
 
     const div = document.createElement("div");
-    div.className = "row";
-    div.innerHTML = `
+    div.className="row";
+
+    div.innerHTML=`
       <div>
-        ${t.desc} - $${t.amt}
+        ${t.desc}
+        <span class="amt">$${t.amt}</span>
         <div class="subtle">${cat}</div>
       </div>
-      <div>
-        <button data-id="${t.id}" class="editBtn">Edit</button>
-        <button data-id="${t.id}" class="delBtn">X</button>
+      <div class="actions">
+        <button class="editBtn">Edit</button>
+        <button class="delBtn">Delete</button>
       </div>
     `;
+
+    div.querySelector(".editBtn").onclick=()=>openEdit(t.id);
+    div.querySelector(".delBtn").onclick=()=>del(t.id);
+
     listEl.appendChild(div);
-  });
-
-  // Attach events AFTER render
-  document.querySelectorAll(".editBtn").forEach(btn=>{
-    btn.onclick = ()=> openEdit(btn.dataset.id);
-  });
-
-  document.querySelectorAll(".delBtn").forEach(btn=>{
-    btn.onclick = ()=> del(btn.dataset.id);
   });
 }
 </script>
