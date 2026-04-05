@@ -2,129 +2,491 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Budget App Debug</title>
+  <title>Budget App</title>
+
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
-    body { font-family: -apple-system, sans-serif; margin: 0; background: #eef7ee; }
-    .wrap { max-width: 700px; margin: 0 auto; padding: 16px; }
-    .card { background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 12px; box-shadow: 0 4px 10px rgba(0,0,0,.06); }
-    .row { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding: 8px 0; }
-    .subtle { color: #666; font-size: 12px; }
-    button { padding: 8px 10px; border: none; border-radius: 8px; background: #16a34a; color: #fff; font-weight: 700; cursor: pointer; margin-right: 6px; }
-    #debug { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: #111; color: #0f0; padding: 10px; border-radius: 8px; min-height: 100px; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #eef7ee; }
+
+    .header {
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+      color: #fff;
+      padding: 25px;
+      text-align: center;
+      border-radius: 0 0 25px 25px;
+    }
+
+    .container { padding: 15px; margin-top: -20px; }
+
+    .card {
+      background: #fff;
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 15px;
+      box-shadow: 0 6px 18px rgba(0,0,0,.05);
+    }
+
+    .sticky { position: sticky; bottom: 10px; }
+
+    .stat { display: flex; align-items: center; gap: 8px; }
+    #budget { width: 110px; text-align: right; }
+
+    input, select {
+      width: 100%;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid #ddd;
+      margin-bottom: 10px;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 8px 10px;
+      cursor: pointer;
+      background: #16a34a;
+      color: #fff;
+      font-weight: bold;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid #eee;
+    }
+
+    .actions { display: flex; gap: 5px; flex-shrink: 0; }
+
+    .subtle { font-size: 12px; color: gray; }
+    .empty { text-align: center; color: #888; padding: 10px 0; }
+
+    .progress {
+      height: 12px;
+      background: #e5e5ea;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+
+    .bar { height: 100%; background: #34c759; width: 0%; transition: width .2s ease; }
+    .bar.yellow { background: #ffcc00; }
+    .bar.red { background: #ff3b30; }
+
+    .amt { color: #16a34a; font-weight: bold; margin-left: 8px; }
+
+    #status {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #666;
+    }
+
+    #modal {
+      display: none;
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      background: rgba(0,0,0,.4);
+      justify-content: center;
+      align-items: center;
+      padding: 12px;
+    }
+
+    .modal-box {
+      background: #fff;
+      padding: 20px;
+      border-radius: 15px;
+      width: 100%;
+      max-width: 400px;
+    }
   </style>
 </head>
 <body>
-  <div class="wrap">
+
+  <div class="header"><h2>Bi-Weekly Budget</h2></div>
+
+  <div class="container">
     <div class="card">
-      <h2 style="margin:0 0 8px;">Ledger Debug</h2>
-      <button id="seedBtn">Seed test transaction</button>
-      <button id="loadOnceBtn">Load once</button>
-      <div class="subtle">If this shows permission errors, fix Firestore Rules first.</div>
+      <div class="stat">
+        <span>Budget</span>
+        <button id="updateBudgetBtn">Update</button>
+        <input id="budget" placeholder="$1200" />
+      </div>
+
+      <div><strong>Spent:</strong> <span id="spent">$0</span></div>
+      <div><strong>Remaining:</strong> <span id="remaining">$0</span></div>
+
+      <div class="progress"><div id="bar" class="bar"></div></div>
+      <div id="pace" class="subtle"></div>
+      <div id="cycle" class="subtle"></div>
+      <div id="insight" class="subtle"></div>
+      <div id="status"></div>
     </div>
 
-    <div class="card">
-      <h3 style="margin-top:0;">Debug output</h3>
-      <div id="debug"></div>
+    <div class="card"><canvas id="chart"></canvas></div>
+
+    <div class="card sticky">
+      <input id="desc" placeholder="What did you buy?" />
+      <input id="amount" type="number" placeholder="Amount" />
+
+      <select id="category">
+        <option value="">AI Auto</option>
+        <option>Food</option>
+        <option>Travel</option>
+        <option>Shopping</option>
+        <option>Kids</option>
+        <option>Bills</option>
+        <option>Entertainment</option>
+        <option>Alcohol</option>
+        <option>Other</option>
+      </select>
+
+      <button id="addBtn">Add Purchase</button>
+      <button id="exportBtn">Export</button>
     </div>
 
-    <div class="card">
-      <h3 style="margin-top:0;">Ledger</h3>
-      <div id="list"></div>
+    <div class="card" id="list">
+      <div class="empty">Loading ledger...</div>
+    </div>
+  </div>
+
+  <div id="modal">
+    <div class="modal-box">
+      <h3>Edit Transaction</h3>
+      <input id="editDesc" />
+      <input id="editAmt" type="number" />
+      <select id="editCat">
+        <option>Food</option>
+        <option>Travel</option>
+        <option>Shopping</option>
+        <option>Kids</option>
+        <option>Bills</option>
+        <option>Entertainment</option>
+        <option>Alcohol</option>
+        <option>Other</option>
+      </select>
+      <button id="saveEditBtn">Save</button>
+      <button id="closeModalBtn">Cancel</button>
     </div>
   </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
     import {
-      getFirestore, collection, addDoc, onSnapshot, query, orderBy, getDocs
+      getFirestore, collection, doc, addDoc, setDoc, updateDoc,
+      deleteDoc, onSnapshot, query, orderBy
     } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
 
-    const debugEl = document.getElementById("debug");
-    const listEl = document.getElementById("list");
-    const seedBtn = document.getElementById("seedBtn");
-    const loadOnceBtn = document.getElementById("loadOnceBtn");
-
-    function log(msg, obj) {
-      const line = obj ? `${msg}\n${JSON.stringify(obj, null, 2)}` : msg;
-      debugEl.textContent += `[${new Date().toLocaleTimeString()}] ${line}\n`;
-      debugEl.scrollTop = debugEl.scrollHeight;
-    }
-
-    function normalizeDate(v) {
-      if (v && typeof v.toDate === "function") return v.toDate();
-      const d = new Date(v);
-      return isNaN(d.getTime()) ? null : d;
-    }
-
-    function render(items) {
-      listEl.innerHTML = "";
-      if (!items.length) {
-        listEl.innerHTML = `<div class="subtle">No transactions returned.</div>`;
-        return;
-      }
-      items.slice().reverse().forEach(t => {
-        const d = normalizeDate(t.date);
-        const row = document.createElement("div");
-        row.className = "row";
-        row.innerHTML = `
-          <div>
-            <div><strong>${t.desc || "(no desc)"}</strong> - $${Number(t.amt || 0).toFixed(2)}</div>
-            <div class="subtle">${t.category || "Other"} • ${d ? d.toLocaleString() : "No/invalid date"}</div>
-          </div>
-          <div class="subtle">${t.id}</div>
-        `;
-        listEl.appendChild(row);
-      });
-    }
-
-    // Firebase init
     const app = initializeApp({
       apiKey: "AIzaSyA1KSyrh5UY3omenJMK2IBCH-fTvVCeIc4",
       authDomain: "biweekly-budget-a5dac.firebaseapp.com",
       projectId: "biweekly-budget-a5dac"
     });
     const db = getFirestore(app);
-    log("Firebase initialized.");
 
-    // Realtime listener
+    // DOM
+    const budgetInput = document.getElementById("budget");
+    const spentEl = document.getElementById("spent");
+    const remainingEl = document.getElementById("remaining");
+    const listEl = document.getElementById("list");
+    const statusEl = document.getElementById("status");
+
+    const descInput = document.getElementById("desc");
+    const amountInput = document.getElementById("amount");
+    const categoryInput = document.getElementById("category");
+
+    const updateBudgetBtn = document.getElementById("updateBudgetBtn");
+    const addBtn = document.getElementById("addBtn");
+    const exportBtn = document.getElementById("exportBtn");
+
+    const bar = document.getElementById("bar");
+    const pace = document.getElementById("pace");
+    const cycle = document.getElementById("cycle");
+    const insight = document.getElementById("insight");
+
+    const modal = document.getElementById("modal");
+    const editDesc = document.getElementById("editDesc");
+    const editAmt = document.getElementById("editAmt");
+    const editCat = document.getElementById("editCat");
+    const saveEditBtn = document.getElementById("saveEditBtn");
+    const closeModalBtn = document.getElementById("closeModalBtn");
+
+    let transactions = [];
+    let editId = null;
+    let budgetAmount = 1200;
+    let dataLoaded = false;
+
+    // Keep your original anchor date
+    const cycleAnchor = new Date(2026, 2, 19);
+
+    function normalizeDate(value) {
+      if (value && typeof value.toDate === "function") return value.toDate(); // Firestore Timestamp
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function catAI(d) {
+      d = (d || "").toLowerCase();
+      if (/restaurant|coffee|pizza/.test(d)) return "Food";
+      if (/uber|gas/.test(d)) return "Travel";
+      if (/amazon|target/.test(d)) return "Shopping";
+      if (/beer|wine|vodka/.test(d)) return "Alcohol";
+      return "Other";
+    }
+
+    // Loading timeout hint (mobile networks)
+    setTimeout(() => {
+      if (!dataLoaded) {
+        listEl.innerHTML = `<div class="empty">Still loading... check connection and wait a moment.</div>`;
+        setStatus("Waiting for Firebase response...");
+      }
+    }, 8000);
+
+    // Budget listener
+    const budgetDoc = doc(db, "settings", "budget");
     onSnapshot(
-      query(collection(db, "transactions"), orderBy("date", "asc")),
-      (snap) => {
-        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        log(`onSnapshot success. docs=${items.length}`);
-        render(items);
+      budgetDoc,
+      async (s) => {
+        if (s.exists()) {
+          budgetAmount = Number(s.data().amount) || 0;
+        } else {
+          budgetAmount = 1200;
+          await setDoc(budgetDoc, { amount: budgetAmount });
+        }
+
+        if (document.activeElement !== budgetInput) {
+          budgetInput.value = "$" + budgetAmount;
+        }
+
+        render();
       },
       (err) => {
-        log(`onSnapshot error: ${err.code} - ${err.message}`);
+        console.error("Budget listener error:", err);
+        setStatus("Budget load error: " + err.message);
       }
     );
 
-    // Seed
-    seedBtn.onclick = async () => {
-      try {
-        const ref = await addDoc(collection(db, "transactions"), {
-          desc: "Debug Test",
-          amt: 9.99,
-          category: "Food",
-          date: new Date().toISOString()
-        });
-        log("Seed write success.", { id: ref.id });
-      } catch (e) {
-        log(`Seed write error: ${e.code} - ${e.message}`);
-      }
+    updateBudgetBtn.onclick = async () => {
+      const val = parseFloat((budgetInput.value || "").replace(/[^0-9.]/g, ""));
+      if (!val || val <= 0) return alert("Enter valid number");
+      await setDoc(budgetDoc, { amount: val });
     };
 
-    // Load once
-    loadOnceBtn.onclick = async () => {
-      try {
-        const snap = await getDocs(collection(db, "transactions"));
-        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        log(`getDocs success. docs=${items.length}`);
-        render(items);
-      } catch (e) {
-        log(`getDocs error: ${e.code} - ${e.message}`);
+    // Transactions listener with fallback
+    onSnapshot(
+      query(collection(db, "transactions"), orderBy("date", "asc")),
+      (snap) => {
+        dataLoaded = true;
+        transactions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setStatus(`Synced ${transactions.length} transaction(s) at ${new Date().toLocaleTimeString()}`);
+        render();
+      },
+      (err) => {
+        console.error("Ordered query failed, fallback to unordered:", err);
+        setStatus("Ordered query failed, trying fallback...");
+
+        onSnapshot(
+          collection(db, "transactions"),
+          (snap2) => {
+            dataLoaded = true;
+            transactions = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
+            transactions.sort((a, b) => {
+              const ta = normalizeDate(a.date)?.getTime() || 0;
+              const tb = normalizeDate(b.date)?.getTime() || 0;
+              return ta - tb;
+            });
+            setStatus(`Fallback synced ${transactions.length} transaction(s) at ${new Date().toLocaleTimeString()}`);
+            render();
+          },
+          (err2) => {
+            console.error("Fallback query failed:", err2);
+            listEl.innerHTML = `<div class="empty">Could not load ledger. Check Firestore rules/settings.</div>`;
+            setStatus("Load failed: " + err2.message);
+          }
+        );
       }
+    );
+
+    // Add transaction
+    addBtn.onclick = async () => {
+      const d = (descInput.value || "").trim();
+      const a = parseFloat(amountInput.value);
+      if (!d || !a || a <= 0) return alert("Enter valid input");
+
+      const c = categoryInput.value || catAI(d);
+
+      await addDoc(collection(db, "transactions"), {
+        desc: d,
+        amt: a,
+        category: c,
+        date: new Date().toISOString()
+      });
+
+      descInput.value = "";
+      amountInput.value = "";
+      categoryInput.value = "";
     };
+
+    // Edit
+    function openEdit(id) {
+      const t = transactions.find(x => x.id === id);
+      if (!t) return;
+      editId = id;
+      editDesc.value = t.desc || "";
+      editAmt.value = t.amt ?? "";
+      editCat.value = t.category || catAI(t.desc);
+      modal.style.display = "flex";
+    }
+
+    saveEditBtn.onclick = async () => {
+      if (!editId) return;
+      const amt = parseFloat(editAmt.value);
+      const desc = (editDesc.value || "").trim();
+      if (!desc || !amt || amt <= 0) return alert("Enter valid edit values");
+
+      await updateDoc(doc(db, "transactions", editId), {
+        desc,
+        amt,
+        category: editCat.value || catAI(desc)
+      });
+
+      modal.style.display = "none";
+      editId = null;
+    };
+
+    closeModalBtn.onclick = () => {
+      modal.style.display = "none";
+      editId = null;
+    };
+
+    // Delete
+    async function del(id) {
+      await deleteDoc(doc(db, "transactions", id));
+    }
+
+    // Export
+    exportBtn.onclick = () => {
+      const rows = transactions.map(t => ({
+        date: normalizeDate(t.date)?.toISOString() || "",
+        desc: t.desc || "",
+        category: t.category || catAI(t.desc),
+        amount: Number(t.amt) || 0
+      }));
+
+      if (!rows.length) return alert("No transactions to export.");
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Transactions");
+      XLSX.writeFile(wb, "transactions.xlsx");
+    };
+
+    function render() {
+      // ----- Cycle stats -----
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+
+      const diff = Math.floor((now - cycleAnchor) / 86400000);
+      const idx = Math.floor(diff / 14);
+
+      const start = new Date(cycleAnchor);
+      start.setDate(cycleAnchor.getDate() + idx * 14);
+      start.setHours(0, 0, 0, 0);
+
+      const end = new Date(start);
+      end.setDate(start.getDate() + 13);
+      end.setHours(23, 59, 59, 999);
+
+      cycle.innerText = `Cycle: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
+
+      const filtered = transactions.filter(t => {
+        const d = normalizeDate(t.date);
+        return d && d >= start && d <= end;
+      });
+
+      const spent = filtered.reduce((sum, t) => sum + (Number(t.amt) || 0), 0);
+      spentEl.innerText = "$" + spent.toFixed(0);
+      remainingEl.innerText = "$" + (budgetAmount - spent).toFixed(0);
+
+      const timePct = Math.max(0, Math.min(100, (((now - start) / 86400000) / 14) * 100));
+      const spendPct = budgetAmount > 0 ? (spent / budgetAmount) * 100 : 0;
+      pace.innerText = `${timePct.toFixed(0)}% time • ${spendPct.toFixed(0)}% budget`;
+
+      bar.style.width = Math.min(Math.max(spendPct, 0), 100) + "%";
+      bar.className = "bar";
+      if (spendPct > 90) bar.classList.add("red");
+      else if (spendPct > 70) bar.classList.add("yellow");
+
+      const totals = {};
+      filtered.forEach(t => {
+        const c = t.category || catAI(t.desc);
+        totals[c] = (totals[c] || 0) + (Number(t.amt) || 0);
+      });
+
+      let text = "";
+      if (spendPct > timePct + 10) text = "⚠️ Overspending vs pace";
+      else if (spendPct < timePct - 10) text = "👍 Under pace";
+      else text = "👌 On track";
+
+      const top = Object.entries(totals).sort((a, b) => b[1] - a[1])[0];
+      if (top) text += ` • Top: ${top[0]}`;
+      if ((totals["Alcohol"] || 0) > 200) text += " • 🍺 Alcohol high";
+      insight.innerText = text;
+
+      if (window.chart) window.chart.destroy();
+      if (Object.keys(totals).length) {
+        window.chart = new Chart(document.getElementById("chart"), {
+          type: "pie",
+          data: {
+            labels: Object.keys(totals),
+            datasets: [{ data: Object.values(totals) }]
+          }
+        });
+      }
+
+      // ----- Ledger list (ALL transactions) -----
+      listEl.innerHTML = "";
+
+      if (!transactions.length) {
+        listEl.innerHTML = `<div class="empty">No transactions found.</div>`;
+        return;
+      }
+
+      transactions.slice().reverse().forEach(t => {
+        const cat = t.category || catAI(t.desc);
+        const when = normalizeDate(t.date)?.toLocaleString() || "No date";
+
+        const div = document.createElement("div");
+        div.className = "row";
+
+        div.innerHTML = `
+          <div>
+            ${t.desc || "(No description)"}
+            <span class="amt">$${Number(t.amt || 0).toFixed(2)}</span>
+            <div class="subtle">${cat}</div>
+            <div class="subtle">${when}</div>
+          </div>
+          <div class="actions">
+            <button class="editBtn">Edit</button>
+            <button class="delBtn">Delete</button>
+          </div>
+        `;
+
+        div.querySelector(".editBtn").onclick = () => openEdit(t.id);
+        div.querySelector(".delBtn").onclick = () => del(t.id);
+
+        listEl.appendChild(div);
+      });
+    }
   </script>
 </body>
 </html>
