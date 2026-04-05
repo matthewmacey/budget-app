@@ -2,112 +2,39 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Budget App</title>
+  <title>Budget App (Mobile Stable)</title>
 
+  <!-- Non-module libs -->
   <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
 
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #eef7ee; }
-
-    .header {
-      background: linear-gradient(135deg, #16a34a, #22c55e);
-      color: #fff;
-      padding: 25px;
-      text-align: center;
-      border-radius: 0 0 25px 25px;
-    }
-
+    body { margin: 0; font-family: -apple-system, sans-serif; background: #eef7ee; }
+    .header { background: linear-gradient(135deg,#16a34a,#22c55e); color: #fff; padding: 25px; text-align: center; border-radius: 0 0 25px 25px; }
     .container { padding: 15px; margin-top: -20px; }
-
-    .card {
-      background: #fff;
-      border-radius: 18px;
-      padding: 16px;
-      margin-bottom: 15px;
-      box-shadow: 0 6px 18px rgba(0,0,0,.05);
-    }
-
+    .card { background: #fff; border-radius: 18px; padding: 16px; margin-bottom: 15px; box-shadow: 0 6px 18px rgba(0,0,0,.05); }
     .sticky { position: sticky; bottom: 10px; }
-
     .stat { display: flex; align-items: center; gap: 8px; }
     #budget { width: 110px; text-align: right; }
-
-    input, select {
-      width: 100%;
-      padding: 12px;
-      border-radius: 12px;
-      border: 1px solid #ddd;
-      margin-bottom: 10px;
-    }
-
-    button {
-      border: none;
-      border-radius: 10px;
-      padding: 8px 10px;
-      cursor: pointer;
-      background: #16a34a;
-      color: #fff;
-      font-weight: bold;
-    }
-
-    .row {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 0;
-      border-bottom: 1px solid #eee;
-    }
-
-    .actions { display: flex; gap: 5px; flex-shrink: 0; }
-
-    .subtle { font-size: 12px; color: gray; }
-    .empty { text-align: center; color: #888; padding: 10px 0; }
-
-    .progress {
-      height: 12px;
-      background: #e5e5ea;
-      border-radius: 10px;
-      overflow: hidden;
-      margin-top: 10px;
-    }
-
-    .bar { height: 100%; background: #34c759; width: 0%; transition: width .2s ease; }
-    .bar.yellow { background: #ffcc00; }
-    .bar.red { background: #ff3b30; }
-
-    .amt { color: #16a34a; font-weight: bold; margin-left: 8px; }
-
-    #status {
-      margin-top: 10px;
-      font-size: 12px;
-      color: #666;
-    }
-
-    #modal {
-      display: none;
-      position: fixed;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      background: rgba(0,0,0,.4);
-      justify-content: center;
-      align-items: center;
-      padding: 12px;
-    }
-
-    .modal-box {
-      background: #fff;
-      padding: 20px;
-      border-radius: 15px;
-      width: 100%;
-      max-width: 400px;
-    }
+    input,select { width:100%; padding:12px; border-radius:12px; border:1px solid #ddd; margin-bottom:10px; }
+    button { border:none; border-radius:10px; padding:8px 10px; cursor:pointer; background:#16a34a; color:#fff; font-weight:bold; }
+    .row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #eee; }
+    .actions { display:flex; gap:5px; flex-shrink:0; }
+    .subtle { font-size:12px; color:gray; }
+    .empty { text-align:center; color:#888; padding:10px 0; }
+    .progress { height:12px; background:#e5e5ea; border-radius:10px; overflow:hidden; margin-top:10px; }
+    .bar { height:100%; background:#34c759; width:0%; transition:width .2s ease; }
+    .bar.yellow{background:#ffcc00} .bar.red{background:#ff3b30}
+    .amt { color:#16a34a; font-weight:bold; margin-left:8px; }
+    #status { margin-top: 10px; font-size: 12px; color: #666; }
+    #modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,.4); justify-content:center; align-items:center; padding:12px; }
+    .modal-box { background:#fff; padding:20px; border-radius:15px; width:100%; max-width:400px; }
   </style>
 </head>
 <body>
-
   <div class="header"><h2>Bi-Weekly Budget</h2></div>
 
   <div class="container">
@@ -117,10 +44,8 @@
         <button id="updateBudgetBtn">Update</button>
         <input id="budget" placeholder="$1200" />
       </div>
-
       <div><strong>Spent:</strong> <span id="spent">$0</span></div>
       <div><strong>Remaining:</strong> <span id="remaining">$0</span></div>
-
       <div class="progress"><div id="bar" class="bar"></div></div>
       <div id="pace" class="subtle"></div>
       <div id="cycle" class="subtle"></div>
@@ -133,61 +58,43 @@
     <div class="card sticky">
       <input id="desc" placeholder="What did you buy?" />
       <input id="amount" type="number" placeholder="Amount" />
-
       <select id="category">
         <option value="">AI Auto</option>
-        <option>Food</option>
-        <option>Travel</option>
-        <option>Shopping</option>
-        <option>Kids</option>
-        <option>Bills</option>
-        <option>Entertainment</option>
-        <option>Alcohol</option>
-        <option>Other</option>
+        <option>Food</option><option>Travel</option><option>Shopping</option>
+        <option>Kids</option><option>Bills</option><option>Entertainment</option>
+        <option>Alcohol</option><option>Other</option>
       </select>
-
       <button id="addBtn">Add Purchase</button>
       <button id="exportBtn">Export</button>
     </div>
 
-    <div class="card" id="list">
-      <div class="empty">Loading ledger...</div>
-    </div>
+    <div class="card" id="list"><div class="empty">Loading ledger...</div></div>
   </div>
 
   <div id="modal">
     <div class="modal-box">
       <h3>Edit Transaction</h3>
-      <input id="editDesc" />
-      <input id="editAmt" type="number" />
+      <input id="editDesc">
+      <input id="editAmt" type="number">
       <select id="editCat">
-        <option>Food</option>
-        <option>Travel</option>
-        <option>Shopping</option>
-        <option>Kids</option>
-        <option>Bills</option>
-        <option>Entertainment</option>
-        <option>Alcohol</option>
-        <option>Other</option>
+        <option>Food</option><option>Travel</option><option>Shopping</option>
+        <option>Kids</option><option>Bills</option><option>Entertainment</option>
+        <option>Alcohol</option><option>Other</option>
       </select>
       <button id="saveEditBtn">Save</button>
       <button id="closeModalBtn">Cancel</button>
     </div>
   </div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
-    import {
-      getFirestore, collection, doc, addDoc, setDoc, updateDoc,
-      deleteDoc, onSnapshot, query, orderBy
-    } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-firestore.js";
-
-    const app = initializeApp({
+  <script>
+    // --- Firebase init (compat) ---
+    const firebaseConfig = {
       apiKey: "AIzaSyA1KSyrh5UY3omenJMK2IBCH-fTvVCeIc4",
       authDomain: "biweekly-budget-a5dac.firebaseapp.com",
       projectId: "biweekly-budget-a5dac"
-    });
-    const db = getFirestore(app);
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
 
     // DOM
     const budgetInput = document.getElementById("budget");
@@ -219,112 +126,72 @@
     let transactions = [];
     let editId = null;
     let budgetAmount = 1200;
-    let dataLoaded = false;
-
-    // Keep your original anchor date
     const cycleAnchor = new Date(2026, 2, 19);
 
+    function setStatus(msg) { statusEl.textContent = msg || ""; }
+
     function normalizeDate(value) {
-      if (value && typeof value.toDate === "function") return value.toDate(); // Firestore Timestamp
+      if (value && typeof value.toDate === "function") return value.toDate(); // Timestamp
       const d = new Date(value);
       return isNaN(d.getTime()) ? null : d;
     }
 
-    function setStatus(text) {
-      statusEl.textContent = text;
-    }
-
-    function catAI(d) {
-      d = (d || "").toLowerCase();
-      if (/restaurant|coffee|pizza/.test(d)) return "Food";
-      if (/uber|gas/.test(d)) return "Travel";
-      if (/amazon|target/.test(d)) return "Shopping";
-      if (/beer|wine|vodka/.test(d)) return "Alcohol";
+    function catAI(d){
+      d=(d||"").toLowerCase();
+      if(/restaurant|coffee|pizza/.test(d)) return "Food";
+      if(/uber|gas/.test(d)) return "Travel";
+      if(/amazon|target/.test(d)) return "Shopping";
+      if(/beer|wine|vodka/.test(d)) return "Alcohol";
       return "Other";
     }
 
-    // Loading timeout hint (mobile networks)
+    // Timeout hint
     setTimeout(() => {
-      if (!dataLoaded) {
-        listEl.innerHTML = `<div class="empty">Still loading... check connection and wait a moment.</div>`;
-        setStatus("Waiting for Firebase response...");
-      }
-    }, 8000);
+      if (!transactions.length) setStatus("Still loading... if this persists, check network or Firestore rules.");
+    }, 7000);
 
     // Budget listener
-    const budgetDoc = doc(db, "settings", "budget");
-    onSnapshot(
-      budgetDoc,
-      async (s) => {
-        if (s.exists()) {
-          budgetAmount = Number(s.data().amount) || 0;
-        } else {
-          budgetAmount = 1200;
-          await setDoc(budgetDoc, { amount: budgetAmount });
-        }
-
-        if (document.activeElement !== budgetInput) {
-          budgetInput.value = "$" + budgetAmount;
-        }
-
-        render();
-      },
-      (err) => {
-        console.error("Budget listener error:", err);
-        setStatus("Budget load error: " + err.message);
+    db.collection("settings").doc("budget").onSnapshot(async (s) => {
+      if (s.exists) {
+        budgetAmount = Number(s.data().amount) || 0;
+      } else {
+        budgetAmount = 1200;
+        await db.collection("settings").doc("budget").set({ amount: 1200 });
       }
-    );
+      if (document.activeElement !== budgetInput) budgetInput.value = "$" + budgetAmount;
+      render();
+    }, (err) => {
+      setStatus("Budget error: " + err.message);
+    });
 
     updateBudgetBtn.onclick = async () => {
-      const val = parseFloat((budgetInput.value || "").replace(/[^0-9.]/g, ""));
-      if (!val || val <= 0) return alert("Enter valid number");
-      await setDoc(budgetDoc, { amount: val });
+      const val = parseFloat((budgetInput.value || "").replace(/[^0-9.]/g,""));
+      if(!val || val <= 0) return alert("Enter valid number");
+      await db.collection("settings").doc("budget").set({ amount: val });
     };
 
-    // Transactions listener with fallback
-    onSnapshot(
-      query(collection(db, "transactions"), orderBy("date", "asc")),
-      (snap) => {
-        dataLoaded = true;
-        transactions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setStatus(`Synced ${transactions.length} transaction(s) at ${new Date().toLocaleTimeString()}`);
-        render();
-      },
-      (err) => {
-        console.error("Ordered query failed, fallback to unordered:", err);
-        setStatus("Ordered query failed, trying fallback...");
+    // Transaction listener (unordered for maximum compatibility)
+    db.collection("transactions").onSnapshot((snap) => {
+      transactions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      transactions.sort((a,b) => {
+        const ta = normalizeDate(a.date)?.getTime() || 0;
+        const tb = normalizeDate(b.date)?.getTime() || 0;
+        return ta - tb;
+      });
+      setStatus(`Synced ${transactions.length} transaction(s) at ${new Date().toLocaleTimeString()}`);
+      render();
+    }, (err) => {
+      listEl.innerHTML = `<div class="empty">Could not load ledger.</div>`;
+      setStatus("Ledger error: " + err.message);
+    });
 
-        onSnapshot(
-          collection(db, "transactions"),
-          (snap2) => {
-            dataLoaded = true;
-            transactions = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
-            transactions.sort((a, b) => {
-              const ta = normalizeDate(a.date)?.getTime() || 0;
-              const tb = normalizeDate(b.date)?.getTime() || 0;
-              return ta - tb;
-            });
-            setStatus(`Fallback synced ${transactions.length} transaction(s) at ${new Date().toLocaleTimeString()}`);
-            render();
-          },
-          (err2) => {
-            console.error("Fallback query failed:", err2);
-            listEl.innerHTML = `<div class="empty">Could not load ledger. Check Firestore rules/settings.</div>`;
-            setStatus("Load failed: " + err2.message);
-          }
-        );
-      }
-    );
-
-    // Add transaction
     addBtn.onclick = async () => {
       const d = (descInput.value || "").trim();
       const a = parseFloat(amountInput.value);
       if (!d || !a || a <= 0) return alert("Enter valid input");
-
       const c = categoryInput.value || catAI(d);
 
-      await addDoc(collection(db, "transactions"), {
+      await db.collection("transactions").add({
         desc: d,
         amt: a,
         category: c,
@@ -336,10 +203,9 @@
       categoryInput.value = "";
     };
 
-    // Edit
-    function openEdit(id) {
+    function openEdit(id){
       const t = transactions.find(x => x.id === id);
-      if (!t) return;
+      if(!t) return;
       editId = id;
       editDesc.value = t.desc || "";
       editAmt.value = t.amt ?? "";
@@ -348,32 +214,25 @@
     }
 
     saveEditBtn.onclick = async () => {
-      if (!editId) return;
+      if(!editId) return;
       const amt = parseFloat(editAmt.value);
       const desc = (editDesc.value || "").trim();
-      if (!desc || !amt || amt <= 0) return alert("Enter valid edit values");
+      if(!desc || !amt || amt <= 0) return alert("Enter valid edit values");
 
-      await updateDoc(doc(db, "transactions", editId), {
-        desc,
-        amt,
-        category: editCat.value || catAI(desc)
+      await db.collection("transactions").doc(editId).update({
+        desc, amt, category: editCat.value || catAI(desc)
       });
 
       modal.style.display = "none";
       editId = null;
     };
 
-    closeModalBtn.onclick = () => {
-      modal.style.display = "none";
-      editId = null;
-    };
+    closeModalBtn.onclick = () => { modal.style.display = "none"; editId = null; };
 
-    // Delete
-    async function del(id) {
-      await deleteDoc(doc(db, "transactions", id));
+    async function del(id){
+      await db.collection("transactions").doc(id).delete();
     }
 
-    // Export
     exportBtn.onclick = () => {
       const rows = transactions.map(t => ({
         date: normalizeDate(t.date)?.toISOString() || "",
@@ -381,7 +240,6 @@
         category: t.category || catAI(t.desc),
         amount: Number(t.amt) || 0
       }));
-
       if (!rows.length) return alert("No transactions to export.");
 
       const ws = XLSX.utils.json_to_sheet(rows);
@@ -391,33 +249,30 @@
     };
 
     function render() {
-      // ----- Cycle stats -----
-      const now = new Date();
-      now.setHours(0, 0, 0, 0);
-
+      const now = new Date(); now.setHours(0,0,0,0);
       const diff = Math.floor((now - cycleAnchor) / 86400000);
       const idx = Math.floor(diff / 14);
 
       const start = new Date(cycleAnchor);
       start.setDate(cycleAnchor.getDate() + idx * 14);
-      start.setHours(0, 0, 0, 0);
+      start.setHours(0,0,0,0);
 
       const end = new Date(start);
       end.setDate(start.getDate() + 13);
-      end.setHours(23, 59, 59, 999);
+      end.setHours(23,59,59,999);
 
       cycle.innerText = `Cycle: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
 
-      const filtered = transactions.filter(t => {
+      const cycleTx = transactions.filter(t => {
         const d = normalizeDate(t.date);
         return d && d >= start && d <= end;
       });
 
-      const spent = filtered.reduce((sum, t) => sum + (Number(t.amt) || 0), 0);
+      const spent = cycleTx.reduce((s,t) => s + (Number(t.amt)||0), 0);
       spentEl.innerText = "$" + spent.toFixed(0);
       remainingEl.innerText = "$" + (budgetAmount - spent).toFixed(0);
 
-      const timePct = Math.max(0, Math.min(100, (((now - start) / 86400000) / 14) * 100));
+      const timePct = Math.max(0, Math.min(100, (((now - start)/86400000)/14)*100));
       const spendPct = budgetAmount > 0 ? (spent / budgetAmount) * 100 : 0;
       pace.innerText = `${timePct.toFixed(0)}% time • ${spendPct.toFixed(0)}% budget`;
 
@@ -427,36 +282,32 @@
       else if (spendPct > 70) bar.classList.add("yellow");
 
       const totals = {};
-      filtered.forEach(t => {
+      cycleTx.forEach(t => {
         const c = t.category || catAI(t.desc);
-        totals[c] = (totals[c] || 0) + (Number(t.amt) || 0);
+        totals[c] = (totals[c] || 0) + (Number(t.amt)||0);
       });
 
       let text = "";
-      if (spendPct > timePct + 10) text = "⚠️ Overspending vs pace";
-      else if (spendPct < timePct - 10) text = "👍 Under pace";
+      if(spendPct > timePct + 10) text = "⚠️ Overspending vs pace";
+      else if(spendPct < timePct - 10) text = "👍 Under pace";
       else text = "👌 On track";
 
-      const top = Object.entries(totals).sort((a, b) => b[1] - a[1])[0];
-      if (top) text += ` • Top: ${top[0]}`;
-      if ((totals["Alcohol"] || 0) > 200) text += " • 🍺 Alcohol high";
+      const top = Object.entries(totals).sort((a,b) => b[1]-a[1])[0];
+      if(top) text += ` • Top: ${top[0]}`;
+      if((totals["Alcohol"]||0) > 200) text += " • 🍺 Alcohol high";
       insight.innerText = text;
 
-      if (window.chart) window.chart.destroy();
-      if (Object.keys(totals).length) {
+      if(window.chart) window.chart.destroy();
+      if(Object.keys(totals).length){
         window.chart = new Chart(document.getElementById("chart"), {
-          type: "pie",
-          data: {
-            labels: Object.keys(totals),
-            datasets: [{ data: Object.values(totals) }]
-          }
+          type:"pie",
+          data:{ labels:Object.keys(totals), datasets:[{ data:Object.values(totals) }] }
         });
       }
 
-      // ----- Ledger list (ALL transactions) -----
+      // Ledger = ALL transactions
       listEl.innerHTML = "";
-
-      if (!transactions.length) {
+      if(!transactions.length){
         listEl.innerHTML = `<div class="empty">No transactions found.</div>`;
         return;
       }
@@ -467,11 +318,9 @@
 
         const div = document.createElement("div");
         div.className = "row";
-
         div.innerHTML = `
           <div>
-            ${t.desc || "(No description)"}
-            <span class="amt">$${Number(t.amt || 0).toFixed(2)}</span>
+            ${t.desc || "(No description)"} <span class="amt">$${Number(t.amt||0).toFixed(2)}</span>
             <div class="subtle">${cat}</div>
             <div class="subtle">${when}</div>
           </div>
@@ -483,7 +332,6 @@
 
         div.querySelector(".editBtn").onclick = () => openEdit(t.id);
         div.querySelector(".delBtn").onclick = () => del(t.id);
-
         listEl.appendChild(div);
       });
     }
