@@ -56,9 +56,9 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 10px;
       padding: 10px 0;
       border-bottom: 1px solid #eee;
-      gap: 10px;
     }
 
     .actions { display: flex; gap: 5px; flex-shrink: 0; }
@@ -74,19 +74,18 @@
       margin-top: 10px;
     }
 
-    .bar { height: 100%; background: #34c759; width: 0%; transition: width 0.2s ease; }
+    .bar { height: 100%; background: #34c759; width: 0%; transition: width .2s ease; }
     .bar.yellow { background: #ffcc00; }
     .bar.red { background: #ff3b30; }
 
     .amt { color: #16a34a; font-weight: bold; margin-left: 8px; }
 
-    /* Modal */
     #modal {
       display: none;
       position: fixed;
       top: 0; left: 0;
       width: 100%; height: 100%;
-      background: rgba(0, 0, 0, 0.4);
+      background: rgba(0,0,0,.4);
       justify-content: center;
       align-items: center;
       padding: 12px;
@@ -147,7 +146,6 @@
     <div class="card" id="list"></div>
   </div>
 
-  <!-- EDIT MODAL -->
   <div id="modal">
     <div class="modal-box">
       <h3>Edit Transaction</h3>
@@ -212,10 +210,15 @@
     let editId = null;
     let budgetAmount = 1200;
 
-    // Keep your original anchor
+    // Keep your original anchor date
     const cycleAnchor = new Date(2026, 2, 19);
 
-    // AI categorize
+    function normalizeDate(value) {
+      if (value && typeof value.toDate === "function") return value.toDate(); // Firestore Timestamp
+      const d = new Date(value);
+      return isNaN(d.getTime()) ? null : d;
+    }
+
     function catAI(d) {
       d = (d || "").toLowerCase();
       if (/restaurant|coffee|pizza/.test(d)) return "Food";
@@ -225,23 +228,28 @@
       return "Other";
     }
 
-    // Budget
+    // Budget listener
     const budgetDoc = doc(db, "settings", "budget");
+    onSnapshot(
+      budgetDoc,
+      async (s) => {
+        if (s.exists()) {
+          budgetAmount = Number(s.data().amount) || 0;
+        } else {
+          budgetAmount = 1200;
+          await setDoc(budgetDoc, { amount: budgetAmount });
+        }
 
-    onSnapshot(budgetDoc, async (s) => {
-      if (s.exists()) {
-        budgetAmount = Number(s.data().amount) || 0;
-      } else {
-        budgetAmount = 1200;
-        await setDoc(budgetDoc, { amount: budgetAmount });
+        if (document.activeElement !== budgetInput) {
+          budgetInput.value = "$" + budgetAmount;
+        }
+
+        render();
+      },
+      (err) => {
+        console.error("Budget listener failed:", err);
       }
-
-      if (document.activeElement !== budgetInput) {
-        budgetInput.value = "$" + budgetAmount;
-      }
-
-      render();
-    });
+    );
 
     updateBudgetBtn.onclick = async () => {
       const val = parseFloat((budgetInput.value || "").replace(/[^0-9.]/g, ""));
@@ -249,13 +257,38 @@
       await setDoc(budgetDoc, { amount: val });
     };
 
-    // Transactions
-    onSnapshot(query(collection(db, "transactions"), orderBy("date", "asc")), (snap) => {
-      transactions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      render();
-    });
+    // Robust transaction listener with fallback
+    onSnapshot(
+      query(collection(db, "transactions"), orderBy("date", "asc")),
+      (snap) => {
+        transactions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        console.log("Ordered transactions loaded:", transactions.length);
+        render();
+      },
+      async (err) => {
+        console.error("Ordered query failed, falling back to unordered:", err);
 
-    // Add
+        onSnapshot(
+          collection(db, "transactions"),
+          (snap2) => {
+            transactions = snap2.docs.map(d => ({ id: d.id, ...d.data() }));
+            transactions.sort((a, b) => {
+              const ta = normalizeDate(a.date)?.getTime() || 0;
+              const tb = normalizeDate(b.date)?.getTime() || 0;
+              return ta - tb;
+            });
+            console.log("Fallback transactions loaded:", transactions.length);
+            render();
+          },
+          (err2) => {
+            console.error("Fallback query also failed:", err2);
+            listEl.innerHTML = `<div class="empty">Could not load transactions. Check Firestore rules in Firebase Console.</div>`;
+          }
+        );
+      }
+    );
+
+    // Add transaction
     addBtn.onclick = async () => {
       const d = (descInput.value || "").trim();
       const a = parseFloat(amountInput.value);
@@ -289,13 +322,15 @@
     saveEditBtn.onclick = async () => {
       if (!editId) return;
       const amt = parseFloat(editAmt.value);
-      if (!editDesc.value.trim() || !amt || amt <= 0) return alert("Enter valid edit values");
+      const desc = (editDesc.value || "").trim();
+      if (!desc || !amt || amt <= 0) return alert("Enter valid edit values");
 
       await updateDoc(doc(db, "transactions", editId), {
-        desc: editDesc.value.trim(),
+        desc,
         amt,
-        category: editCat.value || catAI(editDesc.value)
+        category: editCat.value || catAI(desc)
       });
+
       modal.style.display = "none";
       editId = null;
     };
@@ -313,10 +348,10 @@
     // Export
     exportBtn.onclick = () => {
       const rows = transactions.map(t => ({
-        date: t.date || "",
+        date: normalizeDate(t.date)?.toISOString() || "",
         desc: t.desc || "",
         category: t.category || catAI(t.desc),
-        amount: t.amt || 0
+        amount: Number(t.amt) || 0
       }));
 
       if (!rows.length) return alert("No transactions to export.");
@@ -327,7 +362,6 @@
       XLSX.writeFile(wb, "transactions.xlsx");
     };
 
-    // Render
     function render() {
       const now = new Date();
       now.setHours(0, 0, 0, 0);
@@ -341,24 +375,22 @@
 
       const end = new Date(start);
       end.setDate(start.getDate() + 13);
-      end.setHours(23, 59, 59, 999); // include full final day
+      end.setHours(23, 59, 59, 999);
 
       cycle.innerText = `Cycle: ${start.toLocaleDateString()} - ${end.toLocaleDateString()}`;
 
-      // Cycle-filtered transactions for stats/chart
+      // Cycle-filtered values for stats/chart
       const filtered = transactions.filter(t => {
-        const d = new Date(t.date);
-        return d >= start && d <= end;
+        const d = normalizeDate(t.date);
+        return d && d >= start && d <= end;
       });
 
-      const spent = filtered.reduce((a, b) => a + (Number(b.amt) || 0), 0);
-
+      const spent = filtered.reduce((sum, t) => sum + (Number(t.amt) || 0), 0);
       spentEl.innerText = "$" + spent.toFixed(0);
       remainingEl.innerText = "$" + (budgetAmount - spent).toFixed(0);
 
       const timePct = Math.max(0, Math.min(100, (((now - start) / 86400000) / 14) * 100));
       const spendPct = budgetAmount > 0 ? (spent / budgetAmount) * 100 : 0;
-
       pace.innerText = `${timePct.toFixed(0)}% time • ${spendPct.toFixed(0)}% budget`;
 
       bar.style.width = Math.min(Math.max(spendPct, 0), 100) + "%";
@@ -380,7 +412,6 @@
       const top = Object.entries(totals).sort((a, b) => b[1] - a[1])[0];
       if (top) text += ` • Top: ${top[0]}`;
       if ((totals["Alcohol"] || 0) > 200) text += " • 🍺 Alcohol high";
-
       insight.innerText = text;
 
       if (window.chart) window.chart.destroy();
@@ -394,16 +425,17 @@
         });
       }
 
-      // Ledger list: show ALL transactions so it never appears blank due to cycle filter
+      // Ledger list: ALL transactions
       listEl.innerHTML = "";
 
       if (!transactions.length) {
-        listEl.innerHTML = `<div class="empty">No transactions yet.</div>`;
+        listEl.innerHTML = `<div class="empty">No transactions found.</div>`;
         return;
       }
 
       transactions.slice().reverse().forEach(t => {
         const cat = t.category || catAI(t.desc);
+        const when = normalizeDate(t.date)?.toLocaleString() || "No date";
 
         const div = document.createElement("div");
         div.className = "row";
@@ -413,7 +445,7 @@
             ${t.desc || "(No description)"}
             <span class="amt">$${Number(t.amt || 0).toFixed(2)}</span>
             <div class="subtle">${cat}</div>
-            <div class="subtle">${new Date(t.date).toLocaleString()}</div>
+            <div class="subtle">${when}</div>
           </div>
           <div class="actions">
             <button class="editBtn">Edit</button>
